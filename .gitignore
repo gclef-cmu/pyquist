@@ -1,0 +1,6 @@
+*.ipynb
+
+.ipynb_checkpoints/
+pyquist.egg-info/
+venv/
+__pycache__
