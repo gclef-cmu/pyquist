@@ -6,7 +6,7 @@ from urllib.request import urlopen
 
 import numpy as np
 
-from .helper import dbfs_to_amplitude
+from .helper import dbfs_to_gain
 from .paths import CACHE_DIR
 
 
@@ -109,22 +109,32 @@ class Audio(AudioBuffer):
         return self.num_samples / self.sample_rate
 
     @property
-    def peak_amplitude(self) -> float:
+    def peak_gain(self) -> float:
         """Returns the peak amplitude of the audio."""
         return float(np.abs(self).max())
 
     def normalize(self, *, peak_dbfs: float = 0.0, in_place: bool = True) -> "Audio":
         """Returns a normalized version of the audio."""
-        max_gain = self.peak_amplitude
-        if max_gain == 0.0:
+        peak_gain = self.peak_gain
+        if peak_gain == 0.0:
             gain = 1.0
         else:
-            gain = dbfs_to_amplitude(peak_dbfs) / max_gain
+            gain = dbfs_to_gain(peak_dbfs) / peak_gain
         if in_place:
             self[:] *= gain
             result = self
         else:
             result = Audio.from_array(self * gain, self.sample_rate)
+        return result
+
+    def clip(self, *, peak_gain: float = 1.0, in_place: bool = True) -> "Audio":
+        """Clips the audio to a peak gain."""
+        clipped = np.clip(self, -peak_gain, peak_gain)
+        if in_place:
+            self[:] = clipped
+            result = self
+        else:
+            result = Audio.from_array(clipped, self.sample_rate)
         return result
 
     def resample(self, new_sample_rate: int, **kwargs) -> "Audio":

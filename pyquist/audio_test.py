@@ -61,19 +61,28 @@ class TestAudioBuffer(unittest.TestCase):
         self.assertEqual(audio.num_samples, 101155)
         self.assertEqual(audio.sample_rate, 22050)
         self.assertEqual(audio.shape, (2, 101155))
-        self.assertAlmostEqual(audio.peak_amplitude, 0.291, places=3)
+        self.assertAlmostEqual(audio.peak_gain, 0.291, places=3)
         self.assertAlmostEqual(audio.duration, 4.59, places=2)
 
         # normalize
         audio_norm = audio.normalize(in_place=False)
-        self.assertAlmostEqual(audio_norm.peak_amplitude, 1.0, places=3)
+        self.assertAlmostEqual(audio_norm.peak_gain, 1.0, places=3)
         audio_norm = audio.normalize(peak_dbfs=-6.0, in_place=False)
-        self.assertAlmostEqual(audio_norm.peak_amplitude, 0.501, places=3)
+        self.assertAlmostEqual(audio_norm.peak_gain, 0.501, places=3)
         audio_norm = audio.normalize(peak_dbfs=6.0, in_place=False)
-        self.assertAlmostEqual(audio_norm.peak_amplitude, 1.995, places=3)
-        self.assertAlmostEqual(audio.peak_amplitude, 0.291, places=3)
+        self.assertAlmostEqual(audio_norm.peak_gain, 1.995, places=3)
+        self.assertAlmostEqual(audio.peak_gain, 0.291, places=3)
         audio.normalize()
-        self.assertAlmostEqual(audio.peak_amplitude, 1.0, places=3)
+        self.assertAlmostEqual(audio.peak_gain, 1.0, places=3)
+
+        # clip
+        audio_clipped = audio.clip(in_place=False)
+        self.assertAlmostEqual(audio_clipped.peak_gain, 1.0, places=3)
+        audio_clipped = audio.clip(peak_gain=0.5, in_place=False)
+        self.assertAlmostEqual(audio_clipped.peak_gain, 0.5, places=3)
+        self.assertAlmostEqual(audio.peak_gain, 1.0, places=3)
+        audio.clip(peak_gain=0.25)
+        self.assertAlmostEqual(audio.peak_gain, 0.25, places=3)
 
         # resample
         resampled = audio.resample(44100)
