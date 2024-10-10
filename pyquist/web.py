@@ -1,6 +1,6 @@
-from io import BytesIO
 import json
 import re
+from io import BytesIO
 from typing import Tuple
 from urllib.parse import urlparse
 
@@ -97,9 +97,9 @@ def fetch_from_freesound(
     if preview_okay:
         # Get high quality preview
         _, client_secret = _get_freesound_client_credentials(reauthenticate)
-        url = f"https://freesound.org/apiv2/sounds/{sound_id}"
+        metadata_url = f"https://freesound.org/apiv2/sounds/{sound_id}"
         response = requests.get(
-            url, params={"token": client_secret, "fields": "previews"}
+            metadata_url, params={"token": client_secret, "fields": "previews"}
         )
         if response.status_code != 200:
             raise Exception(

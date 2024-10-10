@@ -126,7 +126,7 @@ class Audio(AudioBuffer):
         else:
             gain = dbfs_to_gain(peak_dbfs) / peak_gain
         if in_place:
-            self *= gain
+            self[:] *= gain
             result = self
         else:
             result = Audio.from_array(self * gain, self.sample_rate)
