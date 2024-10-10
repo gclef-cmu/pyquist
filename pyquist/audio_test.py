@@ -21,22 +21,47 @@ class TestAudioBuffer(unittest.TestCase):
 
         # Slicing
         comparison = np.zeros((2, 10), dtype=np.float32)
-        self.assertNotIsInstance(buffer[0], AudioBuffer)
-        self.assertIsInstance(buffer[0], np.ndarray)
-        self.assertEqual(type(buffer[0]), type(comparison[0]))
-        self.assertNotIsInstance(buffer.sum(), AudioBuffer)
-        self.assertIsInstance(buffer.sum(), np.float32)
-        self.assertEqual(type(buffer.sum()), type(comparison.sum()))
+        should_be_audio_buffer = [
+            buffer[:0],
+            buffer[:1],
+            buffer[1:2],
+            buffer[1:],
+            buffer[:, :0],
+            buffer[:, :1],
+            buffer[:, 1:2],
+            buffer[:, 1:],
+            buffer[:1, 1:2],
+        ]
+        for s in should_be_audio_buffer:
+            self.assertIsInstance(s, AudioBuffer)
+            self.assertIsInstance(s, np.ndarray)
+        should_be_numpy_array = [
+            buffer[0],
+            buffer[0, 1:],
+            buffer[:, 0],
+            buffer.sum(axis=0),
+            buffer.sum(axis=1),
+        ]
+        for s in should_be_numpy_array:
+            self.assertNotIsInstance(s, AudioBuffer)
+            self.assertIsInstance(s, np.ndarray)
+            self.assertEqual(type(s), type(comparison[0]))
+        should_be_numpy_float = [
+            buffer.sum(),
+            buffer.mean(),
+        ]
+        for s in should_be_numpy_float:
+            self.assertNotIsInstance(s, AudioBuffer)
+            self.assertIsInstance(s, np.float32)
+            self.assertEqual(type(s), type(comparison.sum()))
 
         # Arithmetic
-        buffer[:] += 2.0
+        buffer += 2.0
         self.assertAlmostEqual(buffer.sum(), 40.0)
         self.assertIsInstance(buffer, AudioBuffer)
-        self.assertIsInstance(buffer, np.ndarray)
         buffer.clear()
         self.assertAlmostEqual(buffer.sum(), 0.0)
         self.assertIsInstance(buffer, AudioBuffer)
-        self.assertIsInstance(buffer, np.ndarray)
 
         # Invalid initialization
         with self.assertRaises(ValueError):
@@ -121,6 +146,19 @@ class TestAudioBuffer(unittest.TestCase):
             self.assertIsInstance(audio, np.ndarray)
             self.assertEqual(audio.sample_rate, 44100)
             self.assertEqual(audio.ndim, 2)
+
+        # Slicing
+        audio = Audio.from_array(np.zeros((2, 10), dtype=np.float32), sample_rate=44100)
+        self.assertIsInstance(audio[:1], Audio)
+        self.assertIsInstance(audio[:1, :5], Audio)
+        self.assertIsInstance(audio[:, :5], Audio)
+        self.assertEqual(audio[:1].sample_rate, audio.sample_rate)
+        self.assertEqual(audio[:1].duration, audio.duration)
+        self.assertAlmostEqual(audio[:1, :5].duration, audio.duration / 2)
+        self.assertNotIsInstance(audio[0], Audio)
+        self.assertIsInstance(audio[0], np.ndarray)
+        self.assertNotIsInstance(audio.sum(), Audio)
+        self.assertIsInstance(audio.sum(), np.float32)
 
         # Invalid initialization
         with self.assertRaises(ValueError):

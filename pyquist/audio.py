@@ -51,17 +51,17 @@ class AudioBuffer(np.ndarray):
         return obj
 
     def __getitem__(self, *args, **kwargs):
-        """Ensure any slices return np.ndarray instead of AudioBuffer."""
-        return super().__getitem__(*args, **kwargs).view(np.ndarray)
+        """Ensure any non-2D slices return ndarray instead of AudioBuffer."""
+        result = super().__getitem__(*args, **kwargs)
+        return result if result.ndim == 2 else result.view(np.ndarray)
 
     def __array_wrap__(self, result, *args, **kwargs):
         """Ensures that output of ufuncs like sum() is np.ndarray or scalar."""
         if result.ndim == 0:
-            # Scalar result: return as scalar type (float, int, etc.)
-            return result[()]  # Equivalent to scalar conversion
+            return result[()]
         else:
-            # For array-like results, return as np.ndarray
-            return super().__array_wrap__(result, *args, **kwargs).view(np.ndarray)
+            result = super().__array_wrap__(result, *args, **kwargs)
+            return result if result.ndim == 2 else result.view(np.ndarray)
 
     @property
     def num_channels(self) -> int:
@@ -98,6 +98,14 @@ class Audio(AudioBuffer):
         obj._sample_rate = sample_rate
         return obj
 
+    def __getitem__(self, *args, **kwargs):
+        """Ensure slices retain the sample rate."""
+        result = super().__getitem__(*args, **kwargs)
+        if isinstance(result, AudioBuffer):
+            result._sample_rate = self._sample_rate
+            assert isinstance(result, Audio)
+        return result
+
     @property
     def sample_rate(self) -> int:
         """Returns the sample rate of the audio."""
@@ -121,7 +129,7 @@ class Audio(AudioBuffer):
         else:
             gain = dbfs_to_gain(peak_dbfs) / peak_gain
         if in_place:
-            self[:] *= gain
+            self *= gain
             result = self
         else:
             result = Audio.from_array(self * gain, self.sample_rate)
