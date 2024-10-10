@@ -6,3 +6,7 @@ target-version = ['py310']
 profile = "black"
 line_length = 88
 src_paths = ["pyquist"]
+
+[[tool.mypy.overrides]]
+module = "requests.*"
+ignore_missing_imports = true

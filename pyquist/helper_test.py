@@ -2,12 +2,7 @@ import unittest
 
 import numpy as np
 
-from .helper import (
-    gain_to_dbfs,
-    dbfs_to_gain,
-    frequency_to_pitch,
-    pitch_to_frequency,
-)
+from .helper import dbfs_to_gain, frequency_to_pitch, gain_to_dbfs, pitch_to_frequency
 
 
 class TestHelper(unittest.TestCase):
