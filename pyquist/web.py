@@ -73,6 +73,7 @@ def _get_freesound_oauthv2_token(reauthenticate: bool) -> str:
 def fetch_from_freesound(
     id_or_url: str | int,
     *,
+    preview_okay: bool = True,
     reauthenticate: bool = False,
 ) -> Audio:
     # Parse URL
@@ -93,14 +94,27 @@ def fetch_from_freesound(
             except ValueError:
                 raise ValueError("Invalid FreeSound URL or ID.")
 
-    # Get access token
-    access_token = _get_freesound_oauthv2_token(reauthenticate=reauthenticate)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(
-        f"https://freesound.org/apiv2/sounds/{sound_id}/download/",
-        headers=headers,
-    )
-    return Audio.from_file(BytesIO(response.content))
+    if preview_okay:
+        # Get high quality preview
+        _, client_secret = _get_freesound_client_credentials(reauthenticate)
+        url = f"https://freesound.org/apiv2/sounds/{sound_id}"
+        response = requests.get(
+            url, params={"token": client_secret, "fields": "previews"}
+        )
+        if response.status_code != 200:
+            raise Exception(
+                f"Error retrieving sound info: {response.status_code} - {response.text}"
+            )
+        return Audio.from_url(response.json()["previews"]["preview-hq-ogg"])
+    else:
+        # Get original quality using OAuthV2
+        access_token = _get_freesound_oauthv2_token(reauthenticate=reauthenticate)
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"https://freesound.org/apiv2/sounds/{sound_id}/download/",
+            headers=headers,
+        )
+        return Audio.from_file(BytesIO(response.content))
 
 
 if __name__ == "__main__":
