@@ -147,6 +147,19 @@ class TestAudioBuffer(unittest.TestCase):
             self.assertEqual(audio.sample_rate, 44100)
             self.assertEqual(audio.ndim, 2)
 
+        # Slicing
+        audio = Audio.from_array(np.zeros((2, 10), dtype=np.float32), sample_rate=44100)
+        self.assertIsInstance(audio[:1], Audio)
+        self.assertIsInstance(audio[:1, :5], Audio)
+        self.assertIsInstance(audio[:, :5], Audio)
+        self.assertEqual(audio[:1].sample_rate, audio.sample_rate)
+        self.assertEqual(audio[:1].duration, audio.duration)
+        self.assertAlmostEqual(audio[:1, :5].duration, audio.duration / 2)
+        self.assertNotIsInstance(audio[0], Audio)
+        self.assertIsInstance(audio[0], np.ndarray)
+        self.assertNotIsInstance(audio.sum(), Audio)
+        self.assertIsInstance(audio.sum(), np.float32)
+
         # Invalid initialization
         with self.assertRaises(ValueError):
             Audio.from_array(stereo, sample_rate=-1)

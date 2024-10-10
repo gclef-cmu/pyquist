@@ -53,9 +53,7 @@ class AudioBuffer(np.ndarray):
     def __getitem__(self, *args, **kwargs):
         """Ensure any non-2D slices return ndarray instead of AudioBuffer."""
         result = super().__getitem__(*args, **kwargs)
-        if result.ndim != 2:
-            result = result.view(np.ndarray)
-        return result
+        return result if result.ndim == 2 else result.view(np.ndarray)
 
     def __array_wrap__(self, result, *args, **kwargs):
         """Ensures that output of ufuncs like sum() is np.ndarray or scalar."""
@@ -63,9 +61,7 @@ class AudioBuffer(np.ndarray):
             return result[()]
         else:
             result = super().__array_wrap__(result, *args, **kwargs)
-            if result.ndim != 2:
-                return result.view(np.ndarray)
-            return result
+            return result if result.ndim == 2 else result.view(np.ndarray)
 
     @property
     def num_channels(self) -> int:
@@ -101,6 +97,14 @@ class Audio(AudioBuffer):
         obj = super().__new__(cls, *args, **kwargs)
         obj._sample_rate = sample_rate
         return obj
+
+    def __getitem__(self, *args, **kwargs):
+        """Ensure slices retain the sample rate."""
+        result = super().__getitem__(*args, **kwargs)
+        if isinstance(result, AudioBuffer):
+            result._sample_rate = self._sample_rate
+            assert isinstance(result, Audio)
+        return result
 
     @property
     def sample_rate(self) -> int:
