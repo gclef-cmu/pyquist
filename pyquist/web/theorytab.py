@@ -7,7 +7,10 @@ import numpy as np
 import requests
 
 from ..helper import pitch_name_to_pitch
-from ..note import SoundEvent
+from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
+from ..score import BasicMetronome, Metronome, Score
+
+_CACHE_DIR = _ROOT_CACHE_DIR / "theorytab"
 
 _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
     "major": (2, 2, 1, 2, 2, 2),
@@ -45,8 +48,8 @@ _CHORD_DEGREES_TO_LILY_NAME = {
 }
 
 
-class ChordEventType(enum.Enum):
-    CHORD = 0
+class HarmonyType(enum.Enum):
+    SYMBOL = 0
     ROOT_POSITION_NOTES = 1
 
 
@@ -155,7 +158,13 @@ def _theorytab_chord_to_pitches(
     return [key_tonic_pc + v for _, v in chord_degree_to_interval.items()]
 
 
-def fetch_raw_json_from_theorytab(id_or_url: str) -> dict:
+def _theorytab_chord_to_symbol(chord: Dict[str, Any], key: Dict[str, Any]) -> str:
+    # Goal is to convert theorytab JSON chord / key to something like "Cmaj7"
+    # See _CHORD_DEGREES_TO_LILY_NAME above
+    raise NotImplementedError("Left as exercise to intrepid student.")
+
+
+def fetch_theorytab_json(id_or_url: str, *, ignore_cache=False) -> dict:
     # Parse TheoryTab ID from input
     id_or_url = id_or_url.strip()
     if len(id_or_url) == 11:
@@ -171,34 +180,42 @@ def fetch_raw_json_from_theorytab(id_or_url: str) -> dict:
         theorytab_id = theorytab_ids[0]
     assert len(theorytab_id) == 11
 
-    # Call API
-    hooktheory_api_url = f"https://api.hooktheory.com/v1/songs/public/{theorytab_id}?fields=ID,song,jsonData"
-    response = requests.get(hooktheory_api_url)
-    if response.status_code != 200:
-        raise Exception(
-            f"Error retrieving TheoryTab data: {response.status_code} - {response.text}"
-        )
-    data = response.json()
-    if "jsonData" not in data:
-        raise Exception(f"Unexpected response from TheoryTab API: {data}")
-    if data["jsonData"] is None:
-        # TODO(chrisdonahue): parse legacy XML data?
-        raise NotImplementedError(
-            "This song has an unsupported format. Try a different one."
-        )
-    return json.loads(data["jsonData"])
+    cache_file = _CACHE_DIR / f"{theorytab_id}.json"
+    if cache_file.exists() and not ignore_cache:
+        # Return cached data
+        with open(cache_file, "r") as f:
+            return json.load(f)
+    else:
+        # Call API
+        hooktheory_api_url = f"https://api.hooktheory.com/v1/songs/public/{theorytab_id}?fields=ID,song,jsonData"
+        response = requests.get(hooktheory_api_url)
+        if response.status_code != 200:
+            raise Exception(
+                f"Error retrieving TheoryTab data: {response.status_code} - {response.text}"
+            )
+        data = response.json()
+        if "jsonData" not in data:
+            raise Exception(f"Unexpected response from TheoryTab API: {data}")
+        if data["jsonData"] is None:
+            # TODO(chrisdonahue): parse legacy XML data?
+            raise NotImplementedError(
+                "This song has an unsupported format. Try a different one."
+            )
+        result = json.loads(data["jsonData"])
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(cache_file, "w") as f:
+            json.dump(result, f)
+        return result
 
 
-def fetch_from_theorytab(
-    id_or_url: str,
+def theorytab_json_to_score(
+    song_data: dict,
     *,
-    chord_event_type: ChordEventType = ChordEventType.ROOT_POSITION_NOTES,
-    note_octave: int = 5,
-    chord_octave: int = 4,
-) -> Tuple[List[SoundEvent], List[SoundEvent]]:
-    # Fetch TheoryTab JSON from API
-    song_data = fetch_raw_json_from_theorytab(id_or_url)
-
+    durations_in_beats: bool = False,
+    harmony_type: HarmonyType = HarmonyType.ROOT_POSITION_NOTES,
+    melody_octave: int = 5,
+    harmony_octave: int = 4,
+) -> Tuple[Metronome, Score, Score]:
     # Create mapping between beats and times
     meters = song_data["meters"]
     if (
@@ -216,7 +233,7 @@ def fetch_from_theorytab(
             "This song has an unsupported tempo. Try a different one."
         )
     bpm = tempos[0]["bpm"]
-    beat_to_time = lambda beat: beat * 60 / bpm
+    met = BasicMetronome(bpm)
 
     # Create mapping between scale degrees and pitches
     keys = song_data["keys"]
@@ -231,10 +248,12 @@ def fetch_from_theorytab(
     for note in song_data["notes"]:
         if note["isRest"]:
             continue
-        time = beat_to_time(note["beat"] - 1.0)
-        duration = beat_to_time(note["duration"])
-        pitch = _theorytab_note_to_pitch(note, key) + note_octave * 12
-        melody.append((time, {"duration": duration, "pitch": pitch}))
+        beat = note["beat"] - 1.0
+        duration = note["duration"]
+        if not durations_in_beats:
+            duration = met.beat_to_time(duration)
+        pitch = _theorytab_note_to_pitch(note, key) + melody_octave * 12
+        melody.append((beat, {"duration": duration, "pitch": pitch}))
     melody = sorted(melody, key=lambda x: x[0])
 
     # Parse chords
@@ -242,18 +261,38 @@ def fetch_from_theorytab(
     for chord in song_data["chords"]:
         if chord["isRest"]:
             continue
-        time = beat_to_time(chord["beat"] - 1.0)
-        duration = beat_to_time(chord["duration"])
-        if chord_event_type == ChordEventType.ROOT_POSITION_NOTES:
+        beat = chord["beat"] - 1.0
+        duration = chord["duration"]
+        if not durations_in_beats:
+            duration = met.beat_to_time(duration)
+        if harmony_type == HarmonyType.SYMBOL:
+            symbol = _theorytab_chord_to_symbol(chord, key)
+            harmony.append((beat, {"duration": duration, "symbol": symbol}))
+        elif harmony_type == HarmonyType.ROOT_POSITION_NOTES:
             pitches = _theorytab_chord_to_pitches(chord, key)
-            pitches = [p + chord_octave * 12 for p in pitches]
+            pitches = [p + harmony_octave * 12 for p in pitches]
             for pitch in pitches:
-                harmony.append((time, {"duration": duration, "pitch": pitch}))
+                harmony.append((beat, {"duration": duration, "pitch": pitch}))
         else:
             raise NotImplementedError()
     harmony = sorted(harmony, key=lambda x: x[0])
 
-    return melody, harmony
+    return met, melody, harmony
+
+
+def fetch_from_theorytab(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
+    """Fetches a pop song from TheoryTab and returns a score.
+
+    To get an `id_or_url` input:
+        1. Find a song on TheoryTab, e.g., https://www.hooktheory.com/theorytab/view/the-beatles/a-hard-days-night
+        2. Right click on "Open in Hookpad", and click "Copy Link Address."
+        3. Paste the link address into the `id_or_url` input.
+
+    Args:
+        id_or_url: The TheoryTab ID or URL.
+        **kwargs: Additional keyword arguments to `theorytab_json_to_score`.
+    """
+    return theorytab_json_to_score(fetch_theorytab_json(id_or_url), **kwargs)
 
 
 if __name__ == "__main__":
@@ -262,8 +301,15 @@ if __name__ == "__main__":
     from ..audio import Audio
     from ..cli import play
     from ..helper import dbfs_to_gain, pitch_to_frequency
-    from ..note import render_score
+    from ..score import render_score
 
+    # Get ID from command line
+    if len(sys.argv) != 2:
+        raise ValueError("Usage: python -m pyquist_lib.pyquist.web.theorytab <id>")
+    id_or_url = sys.argv[1]
+
+    # Basic instrument functions
+    # TODO(chrisdonahue): add something similar to library?
     def _osc(
         duration: float, pitch: int, dbfs: float, sample_rate: int = 44100
     ) -> Audio:
@@ -272,12 +318,21 @@ if __name__ == "__main__":
         # TODO(chrisdonahue): Add envelope
         return Audio.from_array(result.astype(np.float32), sample_rate)
 
-    melody, harmony = fetch_from_theorytab(sys.argv[1])
-
     def _melody(*args, **kwargs):
         return _osc(*args, **kwargs, dbfs=-12)
 
     def _harmony(*args, **kwargs):
         return _osc(*args, **kwargs, dbfs=-18)
 
-    play(render_score([(_melody, melody), (_harmony, harmony)]))
+    # Grab score
+    metronome, melody, harmony = fetch_from_theorytab(sys.argv[1])
+
+    # Convert to playable score
+    playable_score = []
+    for time, kwargs in melody:
+        playable_score.append((time, _melody, kwargs))
+    for time, kwargs in harmony:
+        playable_score.append((time, _harmony, kwargs))
+
+    # Play audio
+    play(render_score(playable_score, metronome), normalize=True)

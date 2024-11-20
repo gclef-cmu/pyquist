@@ -2,8 +2,8 @@ import unittest
 
 import numpy as np
 
-from pyquist.audio import Audio, AudioBuffer
-from pyquist.paths import TEST_DATA_DIR
+from .audio import Audio, AudioBuffer
+from .paths import TEST_DATA_DIR
 
 
 class TestAudioBuffer(unittest.TestCase):
