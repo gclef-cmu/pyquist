@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from .audio import Audio
-from .paths import CACHE_DIR
+from ..audio import Audio
+from ..paths import CACHE_DIR
 
 
 def _get_freesound_client_credentials(reauthenticate: bool) -> Tuple[str, str]:
@@ -70,6 +70,7 @@ def _get_freesound_oauthv2_token(reauthenticate: bool) -> str:
     return token_data["access_token"]
 
 
+# TODO: Cache downloaded files
 def fetch_from_freesound(
     id_or_url: str | int,
     *,
@@ -120,7 +121,7 @@ def fetch_from_freesound(
 if __name__ == "__main__":
     import sys
 
-    from .cli import play
+    from ..cli import play
 
     audio = fetch_from_freesound(sys.argv[1])
     play(audio)
