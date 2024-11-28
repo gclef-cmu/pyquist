@@ -14,15 +14,12 @@ _SD_DEFAULTS_PATH = CACHE_DIR / "sounddevice_defaults.json"
 
 def _restore_sd_defaults():
     global _DEFAULTS
-    if _DEFAULTS is None:
-        if _SD_DEFAULTS_PATH.exists():
-            with open(_SD_DEFAULTS_PATH, "r") as f:
-                _DEFAULTS = json.load(f)
+    if _SD_DEFAULTS_PATH.exists():
+        with open(_SD_DEFAULTS_PATH, "r") as f:
+            _DEFAULTS = json.load(f)
     for k, v in _DEFAULTS.items():
+        print(k, v)
         _set_sd_default(k, v, write=False)
-
-
-_restore_sd_defaults()
 
 
 def _set_sd_default(name: str, value: Any, write: bool = True):
@@ -37,11 +34,11 @@ def _set_sd_default(name: str, value: Any, write: bool = True):
     # Set the default device by name instead of ID
     if name == "device":
         if not (
-            isinstance(value, tuple)
+            (isinstance(value, tuple) or isinstance(value, list))
             and len(value) == 2
             and all(isinstance(d, str) for d in value)
         ):
-            raise TypeError("device must be a tuple of two strings")
+            raise TypeError("device must be a collection of two strings")
         input_name, output_name = value
         input_ids = [
             id
@@ -74,6 +71,9 @@ def _set_sd_default(name: str, value: Any, write: bool = True):
     if write:
         with open(_SD_DEFAULTS_PATH, "w") as f:
             json.dump(_DEFAULTS, f)
+
+
+_restore_sd_defaults()
 
 
 def set_sd_defaults(**kwargs):
