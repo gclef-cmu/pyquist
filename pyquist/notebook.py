@@ -1,7 +1,7 @@
 from IPython.display import Audio as IPythonAudio
 from IPython.display import display
 
-from .audio import Audio
+from . import Audio
 
 
 def play(audio: Audio, *, safe: bool = True, normalize: bool = False):
