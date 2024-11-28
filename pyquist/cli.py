@@ -140,14 +140,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Record audio from the default input device."
     )
-    parser.add_argument("mode", choices=["devices", "record"], help="The mode to run.")
-    parser.add_argument("--output", "-o", help="The output file path.")
+    parser.add_argument(
+        "mode", choices=["devices", "play", "record"], help="The mode to execute."
+    )
+    parser.add_argument("--input", "-i", help="(Play mode) The input file path.")
+    parser.add_argument("--output", "-o", help="(Record mode) The output file path.")
     parser.add_argument(
         "--duration",
         "-d",
         type=float,
         default=10.0,
-        help="The duration of the recording in seconds.",
+        help="(Record mode) The duration of the recording in seconds.",
     )
 
     args = parser.parse_args()
@@ -181,6 +184,12 @@ if __name__ == "__main__":
             new_devices.append(new_device_name)
 
         set_sd_defaults(device=tuple(new_devices))
+
+    elif args.mode == "play":
+        args = parser.parse_args()
+
+        audio = Audio.from_file(args.input)
+        play(audio)
 
     elif args.mode == "record":
         args = parser.parse_args()
