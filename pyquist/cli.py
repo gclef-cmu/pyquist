@@ -8,22 +8,22 @@ import tqdm
 from . import Audio
 from .paths import CACHE_DIR
 
-_DEFAULTS: Dict[str, Any] = {}
+_SD_DEFAULTS: Dict[str, Any] = {}
 _SD_DEFAULTS_PATH = CACHE_DIR / "sounddevice_defaults.json"
 
 
 def _restore_sd_defaults():
-    global _DEFAULTS
+    global _SD_DEFAULTS
     if _SD_DEFAULTS_PATH.exists():
         with open(_SD_DEFAULTS_PATH, "r") as f:
-            _DEFAULTS = json.load(f)
-    for k, v in _DEFAULTS.items():
+            _SD_DEFAULTS = json.load(f)
+    for k, v in _SD_DEFAULTS.items():
         print(k, v)
         _set_sd_default(k, v, write=False)
 
 
 def _set_sd_default(name: str, value: Any, write: bool = True):
-    global _DEFAULTS
+    global _SD_DEFAULTS
 
     # Check if the name is a valid sounddevice default
     try:
@@ -67,16 +67,20 @@ def _set_sd_default(name: str, value: Any, write: bool = True):
         setattr(sd.default, name, value)
 
     # Update cache
-    _DEFAULTS[name] = value
+    _SD_DEFAULTS[name] = value
     if write:
         with open(_SD_DEFAULTS_PATH, "w") as f:
-            json.dump(_DEFAULTS, f)
+            json.dump(_SD_DEFAULTS, f)
 
 
 _restore_sd_defaults()
 
 
 def set_sd_defaults(**kwargs):
+    """Sets the default `sounddevice` parameters.
+
+    To override without writing to cache, change `sounddevice.default` directly.
+    """
     for k, v in kwargs.items():
         _set_sd_default(k, v, write=True)
 
@@ -142,6 +146,7 @@ if __name__ == "__main__":
         "--duration",
         "-d",
         type=float,
+        default=10.0,
         help="The duration of the recording in seconds.",
     )
 
