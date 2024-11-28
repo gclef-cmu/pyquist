@@ -2,9 +2,9 @@
 
 New Python library for CMU 15-322 Intro to Computer Music. WIP.
 
-`pyquist` is not itself a computer music programming framework.
+`pyquist` is not a full-fledged computer music programming framework. You will not find a rich collection of high-level unit generators for synthesis and processing.
 
-`pyquist` turns Python into a computer music programming framework.
+Instead, `pyquist` provides basic abstractions for adapting Python for lower-level computer music programming via NumPy. It is a simple foundation for building more sophisticated computer music applications.
 
 Principles:
 
@@ -15,27 +15,37 @@ Principles:
 
 ## Installation
 
-### Mac OS X
+Requires Python 3.10 or later. `virtualenv` is recommended.
 
-Install Python3 and virtualenv
+### Via pip
+
+`pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git`
+
+### From source
 
 ```sh
 git clone git@github.com:gclef-cmu/pyquist.git
 cd pyquist
-python3 -m venv .venv
+python3 -m virtualenv .venv
 source .venv/bin/activate
 pip install -e .
+```
+
+### Run via Jupyter
+
+```sh
 pip install jupyter ipykernel ipywidgets
 python -m ipykernel install --user --name=pyquist --display-name "Pyquist"
 cd examples
 jupyter notebook
 ```
 
-## Development installation
+## For development
 
 ```sh
+git clone git@github.com:gclef-cmu/pyquist.git
 brew install python@3.10
-python3.10 -m venv .venv
+python3.10 -m virtualenv .venv
 source .venv/bin/activate
 pip install -e .
 pip install pre-commit
@@ -46,6 +56,6 @@ pre-commit install
 
 Inspired by:
 
+- Nyquist
 - Tone.js
 - JUCE
-- Nyquist
