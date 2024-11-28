@@ -18,7 +18,6 @@ def _restore_sd_defaults():
         with open(_SD_DEFAULTS_PATH, "r") as f:
             _SD_DEFAULTS = json.load(f)
     for k, v in _SD_DEFAULTS.items():
-        print(k, v)
         _set_sd_default(k, v, write=False)
 
 
@@ -135,25 +134,31 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs) -> Audio:
 
 if __name__ == "__main__":
     import argparse
+    import sys
 
-    # Usage: python -m pyquist.cli [mode] [arguments]
+    mode = None
+    if len(sys.argv) > 1:
+        mode = sys.argv[1]
+
     parser = argparse.ArgumentParser(
         description="Record audio from the default input device."
     )
     parser.add_argument(
         "mode", choices=["devices", "play", "record"], help="The mode to execute."
     )
-    parser.add_argument("--input", "-i", help="(Play mode) The input file path.")
-    parser.add_argument("--output", "-o", help="(Record mode) The output file path.")
-    parser.add_argument(
-        "--duration",
-        "-d",
-        type=float,
-        default=10.0,
-        help="(Record mode) The duration of the recording in seconds.",
-    )
-
+    if mode == "play":
+        parser.add_argument("input", help="(Play mode) The input file path.")
+    elif mode == "record":
+        parser.add_argument("output", help="(Record mode) The output file path.")
+        parser.add_argument(
+            "--duration",
+            "-d",
+            type=float,
+            default=10.0,
+            help="(Record mode) The duration of the recording in seconds.",
+        )
     args = parser.parse_args()
+
     if args.mode == "devices":
         print("Input devices:")
 
