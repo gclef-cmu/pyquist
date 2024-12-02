@@ -60,6 +60,25 @@ class AudioBuffer(np.ndarray):
             result = super().__array_wrap__(result, *args, **kwargs)
             return result if result.ndim == 2 else result.view(np.ndarray)
 
+    def __array_function__(self, func, types, *args, **kwargs):
+        """Handles casting of ndarrays, etc. before array_wrap.
+        
+        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__"""
+
+        # Perform the default operation
+        result = super().__array_function__(func, types, *args, **kwargs)
+        
+        if isinstance(result, np.ndarray):
+            result = result.view(AudioBuffer)
+        return result
+
+    def __array_finalize__(self, obj):
+        """Called after array viewing, slicing, creating from template, etc."""
+
+        # See: https://stackoverflow.com/a/60216773
+        if obj is None:
+            return
+
     @property
     def num_channels(self) -> int:
         """Returns the number of channels in the buffer."""
@@ -95,14 +114,46 @@ class Audio(AudioBuffer):
         obj._sample_rate = sample_rate
         return obj
 
-    def __getitem__(self, *args, **kwargs):
-        """Ensure slices retain the sample rate."""
-        result = super().__getitem__(*args, **kwargs)
-        if isinstance(result, AudioBuffer):
-            result._sample_rate = self._sample_rate
-            assert isinstance(result, Audio)
+    def __array_function__(self, func, types, *args, **kwargs):
+        """Ensure sample_rate is passed along for functions like np.concatenate.
+        
+        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__"""
+
+        # Extract sample rates from all Audio instances in args
+        def extract_sample_rates(arg):
+            if isinstance(arg, Audio):
+                return [arg.sample_rate]
+            elif isinstance(arg, (list, tuple)):  # Handle nested structures
+                return [rate for elem in arg for rate in extract_sample_rates(elem)]
+            elif isinstance(arg, dict): # Handle values of dict, rarely used in Numpy, but possible
+                return [rate for elem in arg.values() for rate in extract_sample_rates(elem)]
+            else:
+                return []
+
+        sample_rates = extract_sample_rates(args)
+
+        # Check if all sample rates are compatible
+        if len(set(sample_rates)) > 1:
+            raise ValueError("Sample rates must match for operation.")
+
+        # Perform the default operation
+        result = super().__array_function__(func, types, *args, **kwargs)
+        
+        # If the result is an array, add the sample_rate metadata
+        if isinstance(result, np.ndarray):
+            result = result.view(Audio)
+            if isinstance(result, Audio):
+                result._sample_rate = self.sample_rate
         return result
 
+    def __array_finalize__(self, obj):
+        """Called after array viewing, slicing, creating from template, etc."""
+
+        # See: https://stackoverflow.com/a/60216773
+        if obj is None:
+            return
+        self._sample_rate = getattr(obj, '_sample_rate', None)
+    
     @property
     def sample_rate(self) -> int:
         """Returns the sample rate of the audio."""
