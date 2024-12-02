@@ -8,6 +8,8 @@ import tqdm
 from . import Audio
 from .paths import CACHE_DIR
 
+from pyquist.web.freesound import fetch_from_freesound
+
 _SD_DEFAULTS: Dict[str, Any] = {}
 _SD_DEFAULTS_PATH = CACHE_DIR / "sounddevice_defaults.json"
 
@@ -144,7 +146,7 @@ if __name__ == "__main__":
         description="Record audio from the default input device."
     )
     parser.add_argument(
-        "mode", choices=["devices", "play", "record"], help="The mode to execute."
+        "mode", choices=["devices", "play", "record", "freesound"], help="The mode to execute."
     )
     if mode == "play":
         parser.add_argument("input", help="(Play mode) The input file path.")
@@ -156,6 +158,13 @@ if __name__ == "__main__":
             type=float,
             default=10.0,
             help="(Record mode) The duration of the recording in seconds.",
+        )
+    elif mode == "freesound":
+        parser.add_argument("url", help="(Freesound mode) The FreeSound URL.")
+        parser.add_argument(
+            "--output",
+            "-o",
+            help="(Freesound mode) An output file to store the downloaded sound (Optional)",
         )
     args = parser.parse_args()
 
@@ -204,6 +213,13 @@ if __name__ == "__main__":
             audio.write(args.output)
         else:
             play(audio)
+    elif args.mode == "freesound":
+        args = parser.parse_args()
+
+        audio = fetch_from_freesound(args.url)
+        if args.output is not None:
+            audio.write(args.output)
+        play(audio)
 
 
 if __name__ == "__main__":
