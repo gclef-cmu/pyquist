@@ -103,6 +103,37 @@ class Audio(AudioBuffer):
             assert isinstance(result, Audio)
         return result
 
+    def __array_wrap__(self, result, *args, **kwargs):
+        """Ensures that output of ufuncs like sum() is np.ndarray or scalar."""
+        if result.ndim == 0:
+            return result[()]
+        if args[0] is None:
+            return result[()]
+        else:
+            result = super().__array_wrap__(result, *args, **kwargs)
+            if isinstance(result, Audio):
+                result._sample_rate = self.sample_rate
+            return result if result.ndim == 2 else result.view(np.ndarray)
+
+    def __array_function__(self, func, types, args, kwargs):
+        """Ensure sample_rate is passed along for functions like np.concatenate."""
+        # Perform the default operation
+        result = super().__array_function__(func, types, args, kwargs)
+        
+        # If the result is an array, add the sample_rate metadata
+        if isinstance(result, np.ndarray):
+            result = result.view(Audio)
+            if isinstance(result, Audio):
+                result._sample_rate = self.sample_rate
+        return result
+
+    def __array_finalize__(self, obj):
+        """Handle a few more edge cases for numpy extensions."""
+        if obj is None:
+            return
+        self._sample_rate = getattr(obj, '_sample_rate', None)
+
+
     @property
     def sample_rate(self) -> int:
         """Returns the sample rate of the audio."""
