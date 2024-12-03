@@ -15,7 +15,7 @@ Principles:
 
 ## Installation
 
-Requires Python 3.10 or later. `virtualenv` is recommended.
+Requires Python 3.10 or later. `venv` is recommended.
 
 ### Via pip
 
@@ -26,7 +26,7 @@ Requires Python 3.10 or later. `virtualenv` is recommended.
 ```sh
 git clone git@github.com:gclef-cmu/pyquist.git
 cd pyquist
-python3 -m virtualenv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
@@ -45,7 +45,7 @@ jupyter notebook
 ```sh
 git clone git@github.com:gclef-cmu/pyquist.git
 brew install python@3.10
-python3.10 -m virtualenv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 pip install pre-commit
