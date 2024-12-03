@@ -20,7 +20,13 @@ def _restore_sd_defaults():
         with open(_SD_DEFAULTS_PATH, "r") as f:
             _SD_DEFAULTS = json.load(f)
     for k, v in _SD_DEFAULTS.items():
-        _set_sd_default(k, v, write=False)
+        # TODO(chrisdonahue): clean up this logic
+        try:
+            _set_sd_default(k, v, write=False)
+        except ValueError as e:
+            print(f"Error restoring sounddevice defaults: {e}")
+            _SD_DEFAULTS = {}
+            return
 
 
 def _set_sd_default(name: str, value: Any, write: bool = True):

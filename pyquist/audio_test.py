@@ -168,6 +168,21 @@ class TestAudioBuffer(unittest.TestCase):
         with self.assertRaises(ValueError):
             audio.resample(-1)
 
+        # Simple array manipulation
+        audio = Audio.from_array(np.zeros((2, 10), dtype=np.float32), sample_rate=44100)
+        self.assertIsInstance(audio + 0.1, Audio)
+        self.assertIsInstance(audio + audio, Audio)
+        self.assertEqual((audio + 0.1).sample_rate, audio.sample_rate)
+        self.assertIsInstance(np.concatenate([audio, audio], axis=-1), Audio)
+        self.assertEqual(np.concatenate([audio, audio], axis=-1).shape, (2, 20))
+        self.assertEqual(np.concatenate([audio, audio], axis=-1).sample_rate, audio.sample_rate)
+        self.assertEqual(np.concatenate([audio, audio], axis=0).shape, (4, 10))
+        audio_48k = Audio.from_array(np.zeros((2, 10), dtype=np.float32), sample_rate=48000)
+        with self.assertRaises(ValueError):
+            np.concatenate([audio, audio_48k], axis=-1)
+        audio_48k += 0.25
+        self.assertTrue(np.all(audio_48k == 0.25))
+
 
 if __name__ == "__main__":
     unittest.main()
