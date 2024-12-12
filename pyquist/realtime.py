@@ -1,6 +1,13 @@
 import abc
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterator, List, Optional, Tuple
+
+try:
+    import pygame
+except ImportError:
+    pygame = None
+import sounddevice as sd
 
 from .audio import Audio, AudioBuffer
 
@@ -25,12 +32,12 @@ class Message:
     """A message timestamped in seconds, mainly used for scheduling.
 
     Attributes:
-        time: The time in seconds.
+        time: The time in seconds. ASAP if <=0.
         data: The message data.
     """
 
     data: Any
-    time: float
+    time: float = 0.0
 
 
 class AudioProcessor(abc.ABC):
@@ -112,6 +119,78 @@ class AudioProcessor(abc.ABC):
         if not self.prepared:
             raise RuntimeError("Audio processor is not prepared for playback")
         self.process_block(buffer, messages)
+
+
+class AudioProcessorStream(sd.OutputStream):
+    """A sounddevice output stream that processes audio with an AudioProcessor."""
+
+    def __init__(
+        self,
+        processor: AudioProcessor,
+        *,
+        block_size: int = 512,
+        sample_rate: int = 44100,
+    ):
+        super().__init__(
+            samplerate=sample_rate,
+            blocksize=block_size,
+            channels=(processor.num_input_channels, processor.num_output_channels),
+            callback=self.callback,
+        )
+        self._processor = processor
+        self._block_size = block_size
+        self._sample_rate = sample_rate
+        self._message_queue: deque[Message] = deque()
+        self._dequeud_messages: list[Message] = []
+        self._blocks_elapsed = 0
+        self._seconds_per_block = block_size / sample_rate
+
+    def callback(self, outdata, *args):
+        del args
+
+        # Prepare AudioBuffer
+        buffer = AudioBuffer(
+            num_channels=max(
+                self.processor.num_input_channels, self.processor.num_output_channels
+            ),
+            num_samples=self.block_size,
+            array=outdata.swapaxes(0, 1),
+        )
+
+        # Dequeue all available messages
+        while len(self._message_queue):
+            self._dequeud_messages.append(self._message_queue.popleft())
+
+        # Process dequeued messages
+        block_messages = []
+        remaining_messages = []
+        t = self._blocks_elapsed * self._seconds_per_block
+        t_max = t + self._seconds_per_block
+        for message in self._dequeud_messages:
+            if message.time < t_max:
+                block_message = BlockMessage(
+                    offset=max(int((message.time - t) * self._sample_rate), 0),
+                    data=message.data,
+                )
+                assert block_message.offset < self._block_size
+                block_messages.append(block_message)
+            else:
+                remaining_messages.append(message)
+        self._dequeud_messages = remaining_messages
+
+        # Process block
+        self.processor(buffer, block_messages)
+        self._blocks_elapsed += 1
+
+    def __enter__(self, *args, **kwargs):
+        self.processor.prepare_to_play(self.sample_rate, self.block_size)
+        self._blocks_elapsed = 0
+        super().__enter__(*args, **kwargs)
+        return self._message_queue
+
+    def __exit__(self, *args, **kwargs):
+        super().__exit__(*args, **kwargs)
+        self.processor.release_resources()
 
 
 def iter_process(
@@ -220,97 +299,5 @@ def process(
     return output
 
 
-"""
-
-
-class AudioStream(sd.OutputStream):
-    def __init__(
-        self,
-        processor: AudioProcessor,
-        *,
-        block_size: int = 512,
-        sample_rate: int = 44100,
-    ):
-        super().__init__(
-            samplerate=sample_rate,
-            blocksize=block_size,
-            channels=(processor.num_input_channels, processor.num_output_channels),
-            callback=self.callback,
-        )
-        self.processor = processor
-        self.block_size = block_size
-        self.sample_rate = sample_rate
-        self.message_queue = deque()
-
-    def callback(self, outdata, *args):
-        del args
-        messages = [
-            self.message_queue.popleft() for _ in range(len(self.message_queue))
-        ]
-        buffer = AudioBuffer(
-            num_channels=max(
-                self.processor.num_input_channels, self.processor.num_output_channels
-            ),
-            num_samples=self.block_size,
-            array=outdata.swapaxes(0, 1),
-        )
-        self.processor(buffer, messages)
-
-    def __enter__(self, *args, **kwargs):
-        self.processor.prepare_to_play(self.sample_rate, self.block_size)
-        super().__enter__(*args, **kwargs)
-        return self.message_queue
-
-    def __exit__(self, *args, **kwargs):
-        super().__exit__(*args, **kwargs)
-        self.processor.release_resources()
-
-
-def process(
-    processor: AudioProcessor,
-    *,
-    block_size: int = 512,
-    sample_rate: int = 44100,
-    keyboard_control: bool = False,
-    scheduled_messages: List[Tuple[float, Any]] = [],
-    duration: Optional[float] = None,
-    synchronous: bool = False,
-) -> None | Audio:
-    #Processes audio with the given audio processor.
-    if keyboard_control:
-        import pygame
-        from collections import deque
-
-        # Initialize Pygame
-        pygame.init()
-        screen = pygame.display.set_mode(size=(400, 300))
-        pygame.display.set_caption("Press any key")
-
-        font = pygame.font.SysFont(name=None, size=24)
-        text = font.render(
-            "Press keyboard keys to send messages", True, (255, 255, 255)
-        )
-
-        processor.prepare_to_play(sample_rate, block_size)
-    else:
-
-        def audio_callback(outdata, *args):
-            del args
-            buffer = AudioBuffer(
-                num_channels=1, num_samples=block_size, array=outdata.swapaxes(0, 1)
-            )
-            processor(buffer, [])
-            return None
-
-    if duration is None:
-        pass
-    else:
-        with sd.OutputStream(
-            samplerate=sample_rate,
-            blocksize=block_size,
-            channels=1,
-            callback=audio_callback,
-        ):
-            sd.sleep(int(duration * 1000))
-
-"""
+def sleep(duration: float):
+    sd.sleep(int(duration * 1000))
