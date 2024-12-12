@@ -115,15 +115,15 @@ class AudioProcessor(abc.ABC):
 
 
 def iter_process(
-    duration: float,
     processor: AudioProcessor,
+    duration: float,
     input_audio: Optional[Audio] = None,
     messages: Optional[List[Message]] = None,
     *,
     pad_end: bool = True,
     block_size: int = 512,
     sample_rate: int = 44100,
-) -> Iterator[Tuple[AudioBuffer, List[BlockMessage]]]:
+) -> Iterator[Tuple[int, AudioBuffer, List[BlockMessage]]]:
     """Iteratively processes audio with the given audio processor.
 
     Yields audio blocks as they are processed.
@@ -155,7 +155,7 @@ def iter_process(
 
     for i in range(0, num_samples, block_size):
         # Handle incomplete blocks
-        block_i_size = num_samples - i
+        block_i_size = min(block_size, num_samples - i)
         if block_i_size < block_size and not pad_end:
             break
 
@@ -183,12 +183,12 @@ def iter_process(
         if block_i_size < block_size:
             block[: processor.num_output_channels, block_i_size:] = 0.0
 
-        yield block[: processor.num_output_channels], block_messages
+        yield i, block[: processor.num_output_channels], block_messages
 
 
 def process(
-    duration: float,
     processor: AudioProcessor,
+    duration: float,
     input_audio: Optional[Audio] = None,
     messages: Optional[List[Message]] = None,
     *,
@@ -201,22 +201,22 @@ def process(
         num_samples=num_samples,
         sample_rate=sample_rate,
     )
-    for i, (block, _) in enumerate(
-        iter_process(
-            duration=duration,
-            processor=processor,
-            input_audio=input_audio,
-            messages=messages,
-            block_size=block_size,
-            sample_rate=sample_rate,
-            pad_end=True,
-        )
+    for block_offset, block, _ in iter_process(
+        processor=processor,
+        duration=duration,
+        input_audio=input_audio,
+        messages=messages,
+        block_size=block_size,
+        sample_rate=sample_rate,
+        pad_end=True,
     ):
-        block_offset = i * block_size
-        output[
+        output_block = output[
             : processor.num_output_channels,
             block_offset : block_offset + block.shape[1],
-        ] = block[:, : block.shape[1]]
+        ]
+        output_block[:] = block[
+            : processor.num_output_channels, : output_block.shape[1]
+        ]
     return output
 
 
