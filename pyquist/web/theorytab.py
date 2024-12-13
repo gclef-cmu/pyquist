@@ -316,7 +316,7 @@ if __name__ == "__main__":
         t = np.arange(int(duration * sample_rate)) / sample_rate
         result = np.sin(2 * np.pi * t * pitch_to_frequency(pitch)) * dbfs_to_gain(dbfs)
         # TODO(chrisdonahue): Add envelope
-        return Audio.from_array(result.astype(np.float32), sample_rate)
+        return Audio.from_array(result, sample_rate)
 
     def _melody(*args, **kwargs):
         return _osc(*args, **kwargs, dbfs=-12)

@@ -3,6 +3,8 @@ from typing import IO, Optional
 from urllib.request import urlopen
 
 import numpy as np
+import resampy
+import soundfile as sf
 
 from .helper import dbfs_to_gain
 
@@ -19,28 +21,28 @@ class AudioBuffer(np.ndarray):
     def __new__(
         cls,
         *,
-        num_channels: int,
         num_samples: int,
+        num_channels: int,
         array: Optional[np.ndarray] = None,
     ):
         """
         Initializes a buffer of raw 32-bit float audio samples.
 
         Parameters:
-            num_channels: The number of channels in the buffer.
             num_samples: The number of samples in the buffer.
+            num_channels: The number of channels in the buffer.
             array: An optional numpy array to use as the buffer.
                    If None, a zero-filled buffer will be created.
                    Must be same shape as num_channels / num_samples.
         """
-        if num_channels < 0:
-            raise ValueError("The number of channels must be non-negative.")
         if num_samples < 0:
             raise ValueError("The number of samples must be non-negative.")
+        if num_channels < 0:
+            raise ValueError("The number of channels must be non-negative.")
         if array is None:
-            array = np.zeros((num_channels, num_samples), dtype=np.float32)
+            array = np.zeros((num_samples, num_channels), dtype=np.float32)
         else:
-            if array.shape != (num_channels, num_samples):
+            if array.shape != (num_samples, num_channels):
                 raise ValueError("Array shape must match num_channels and num_samples.")
             if array.dtype != np.float32:
                 raise TypeError("Array must have dtype np.float32.")
@@ -62,12 +64,13 @@ class AudioBuffer(np.ndarray):
 
     def __array_function__(self, func, types, *args, **kwargs):
         """Handles casting of ndarrays, etc. before array_wrap.
-        
-        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__"""
+
+        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__
+        """
 
         # Perform the default operation
         result = super().__array_function__(func, types, *args, **kwargs)
-        
+
         if isinstance(result, np.ndarray):
             result = result.view(AudioBuffer)
         return result
@@ -80,13 +83,13 @@ class AudioBuffer(np.ndarray):
             return
 
     @property
-    def num_channels(self) -> int:
-        """Returns the number of channels in the buffer."""
+    def num_samples(self) -> int:
+        """Returns the number of samples in the buffer."""
         return self.shape[0]
 
     @property
-    def num_samples(self) -> int:
-        """Returns the number of samples in the buffer."""
+    def num_channels(self) -> int:
+        """Returns the number of channels in the buffer."""
         return self.shape[1]
 
     def clear(self):
@@ -116,8 +119,9 @@ class Audio(AudioBuffer):
 
     def __array_function__(self, func, types, *args, **kwargs):
         """Ensure sample_rate is passed along for functions like np.concatenate.
-        
-        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__"""
+
+        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__
+        """
 
         # Extract sample rates from all Audio instances in args
         def extract_sample_rates(arg):
@@ -125,8 +129,12 @@ class Audio(AudioBuffer):
                 return [arg.sample_rate]
             elif isinstance(arg, (list, tuple)):  # Handle nested structures
                 return [rate for elem in arg for rate in extract_sample_rates(elem)]
-            elif isinstance(arg, dict): # Handle values of dict, rarely used in Numpy, but possible
-                return [rate for elem in arg.values() for rate in extract_sample_rates(elem)]
+            elif isinstance(
+                arg, dict
+            ):  # Handle values of dict, rarely used in Numpy, but possible
+                return [
+                    rate for elem in arg.values() for rate in extract_sample_rates(elem)
+                ]
             else:
                 return []
 
@@ -138,7 +146,7 @@ class Audio(AudioBuffer):
 
         # Perform the default operation
         result = super().__array_function__(func, types, *args, **kwargs)
-        
+
         # If the result is an array, add the sample_rate metadata
         if isinstance(result, np.ndarray):
             result = result.view(Audio)
@@ -152,8 +160,8 @@ class Audio(AudioBuffer):
         # See: https://stackoverflow.com/a/60216773
         if obj is None:
             return
-        self._sample_rate = getattr(obj, '_sample_rate', None)
-    
+        self._sample_rate = getattr(obj, "_sample_rate", None)
+
     @property
     def sample_rate(self) -> int:
         """Returns the sample rate of the audio."""
@@ -200,14 +208,12 @@ class Audio(AudioBuffer):
         Parameters:
             new_sample_rate: The new sample rate to resample to.
         """
-        import resampy
-
         resampled = resampy.resample(
-            self, self.sample_rate, new_sample_rate, axis=1, **kwargs
+            self, self.sample_rate, new_sample_rate, axis=0, **kwargs
         )
         return Audio(
             num_channels=self.num_channels,
-            num_samples=resampled.shape[1],
+            num_samples=resampled.shape[0],
             array=resampled,
             sample_rate=new_sample_rate,
         )
@@ -219,9 +225,8 @@ class Audio(AudioBuffer):
         Parameters:
             file: The path to the file or a file-like object.
         """
-        import soundfile as sf
 
-        sf.write(file, self.T, self.sample_rate, **kwargs)
+        sf.write(file, self, self.sample_rate, **kwargs)
 
     @classmethod
     def from_array(cls, array: np.ndarray, sample_rate: int) -> "Audio":
@@ -235,12 +240,14 @@ class Audio(AudioBuffer):
         if array.ndim == 0:
             array = array[np.newaxis, np.newaxis]
         elif array.ndim == 1:
-            array = array[np.newaxis, :]
+            array = array[:, np.newaxis]
         elif array.ndim > 2:
-            raise ValueError("Array must have shape (num_channels, num_samples).")
+            raise ValueError("Array must have shape (num_samples, num_channels).")
+        if array.dtype == np.float64:
+            array = array.astype(np.float32)
         return Audio(
-            num_channels=array.shape[0],
-            num_samples=array.shape[1],
+            num_samples=array.shape[0],
+            num_channels=array.shape[1],
             array=array,
             sample_rate=sample_rate,
         )
@@ -253,14 +260,7 @@ class Audio(AudioBuffer):
         Parameters:
             file: The path to the file or a file-like object.
         """
-        import soundfile as sf
-
-        array, sample_rate = sf.read(file)
-        if array.dtype == np.float64:
-            array = array.astype(np.float32)
-        if array.ndim == 2:
-            array = array.T
-        return cls.from_array(array, sample_rate)
+        return cls.from_array(*sf.read(file))
 
     @classmethod
     def from_url(cls, url: str) -> "Audio":

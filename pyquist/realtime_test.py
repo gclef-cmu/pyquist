@@ -25,14 +25,14 @@ class MessageAudioProcessor(AudioProcessor):
 
     def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
         messages = messages[:]
-        for i in range(buffer.shape[1]):
+        for i in range(buffer.shape[0]):
             while messages and messages[0].offset == i:
                 new_value = messages[0].data
                 if not isinstance(new_value, float):
                     raise TypeError("Expected float message data")
                 self.current_value = new_value
                 messages.pop(0)
-            buffer[0, i] = self.current_value
+            buffer[i] = self.current_value
 
 
 class TestAudioProcessing(unittest.TestCase):
@@ -82,7 +82,7 @@ class TestAudioProcessing(unittest.TestCase):
                 phase = (2 * np.pi * freq * t).astype(np.float32)
                 expected = np.sin(phase)
                 if num_samples > 0:
-                    input_audio[0, :] = phase
+                    input_audio[:, 0] = phase
 
                 for block_size in [1, 256, 512, 1024]:
 
@@ -98,7 +98,7 @@ class TestAudioProcessing(unittest.TestCase):
                             block_size=block_size,
                             sample_rate=sample_rate,
                         ):
-                            self.assertEqual(block.shape, (1, block_size))
+                            self.assertEqual(block.shape, (block_size, 1))
                             expected_block = expected[
                                 block_offset : block_offset + block_size
                             ]
@@ -107,7 +107,7 @@ class TestAudioProcessing(unittest.TestCase):
                             )
                             self.assertTrue(
                                 np.array_equal(
-                                    block[0, : expected_block.size],
+                                    block[: expected_block.size, 0],
                                     expected_block,
                                 )
                             )
@@ -131,7 +131,7 @@ class TestAudioProcessing(unittest.TestCase):
                     self.assertEqual(audio.num_channels, 1)
                     self.assertEqual(audio.num_samples, num_samples)
                     self.assertEqual(audio.sample_rate, sample_rate)
-                    self.assertTrue(np.array_equal(audio[0, :], expected))
+                    self.assertTrue(np.array_equal(audio[:, 0], expected))
 
     def test_process_messages(self):
         processor = MessageAudioProcessor()
@@ -169,7 +169,7 @@ class TestAudioProcessing(unittest.TestCase):
                 sample_rate=sample_rate,
             ):
                 self.assertTrue(len(block_msgs) in (0, 1, 2))
-                blocks.append(block[0, :].copy())
+                blocks.append(block[:, 0].copy())
 
             # Concatenate processed blocks up to num_samples
             output = np.concatenate(blocks)[:num_samples]
@@ -186,7 +186,7 @@ class TestAudioProcessing(unittest.TestCase):
             self.assertEqual(audio.num_channels, 1)
             self.assertEqual(audio.num_samples, num_samples)
             self.assertEqual(audio.sample_rate, sample_rate)
-            self.assertTrue(np.array_equal(audio[0, :], expected_output))
+            self.assertTrue(np.array_equal(audio[:, 0], expected_output))
 
 
 if __name__ == "__main__":
