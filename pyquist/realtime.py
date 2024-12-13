@@ -3,10 +3,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterator, List, Optional, Tuple
 
-try:
-    import pygame
-except ImportError:
-    pygame = None
 import sounddevice as sd
 
 from .audio import Audio, AudioBuffer
@@ -145,6 +141,10 @@ class AudioProcessorStream(sd.OutputStream):
         self._blocks_elapsed = 0
         self._seconds_per_block = block_size / sample_rate
 
+    @property
+    def message_queue(self) -> deque[Message]:
+        return self._message_queue
+
     def callback(self, outdata, *args):
         del args
 
@@ -182,15 +182,24 @@ class AudioProcessorStream(sd.OutputStream):
         self.processor(buffer, block_messages)
         self._blocks_elapsed += 1
 
-    def __enter__(self, *args, **kwargs):
+    def start(self, *args, **kwargs):
         self.processor.prepare_to_play(self.sample_rate, self.block_size)
         self._blocks_elapsed = 0
+        super().start(*args, **kwargs)
+
+    def stop(self, *args, **kwargs):
+        super().stop(*args, **kwargs)
+
+    def abort(self, *args, **kwargs):
+        super().abort(*args, **kwargs)
+
+    def close(self, *args, **kwargs):
+        super().close(*args, **kwargs)
+        self.processor.release_resources()
+
+    def __enter__(self, *args, **kwargs) -> deque[Message]:
         super().__enter__(*args, **kwargs)
         return self._message_queue
-
-    def __exit__(self, *args, **kwargs):
-        super().__exit__(*args, **kwargs)
-        self.processor.release_resources()
 
 
 def iter_process(
