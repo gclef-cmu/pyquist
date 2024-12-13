@@ -127,10 +127,12 @@ class AudioProcessorStream(sd.OutputStream):
         block_size: int = 512,
         sample_rate: int = 44100,
     ):
+        if processor.num_input_channels > 0:
+            raise NotImplementedError("Input channels are not supported yet")
         super().__init__(
             samplerate=sample_rate,
             blocksize=block_size,
-            channels=(processor.num_input_channels, processor.num_output_channels),
+            channels=processor.num_output_channels,
             callback=self.callback,
         )
         self._processor = processor
@@ -150,10 +152,8 @@ class AudioProcessorStream(sd.OutputStream):
 
         # Prepare AudioBuffer
         buffer = AudioBuffer(
-            num_channels=max(
-                self.processor.num_input_channels, self.processor.num_output_channels
-            ),
-            num_samples=self.block_size,
+            num_channels=self._processor.num_output_channels,
+            num_samples=self._block_size,
             array=outdata.swapaxes(0, 1),
         )
 
@@ -179,12 +179,13 @@ class AudioProcessorStream(sd.OutputStream):
         self._dequeud_messages = remaining_messages
 
         # Process block
-        self.processor(buffer, block_messages)
+        self._processor(buffer, block_messages)
         self._blocks_elapsed += 1
 
     def start(self, *args, **kwargs):
-        self.processor.prepare_to_play(self.sample_rate, self.block_size)
+        self._processor.prepare(self._sample_rate, self._block_size)
         self._blocks_elapsed = 0
+        self._message_queue.clear()
         super().start(*args, **kwargs)
 
     def stop(self, *args, **kwargs):
@@ -195,11 +196,10 @@ class AudioProcessorStream(sd.OutputStream):
 
     def close(self, *args, **kwargs):
         super().close(*args, **kwargs)
-        self.processor.release_resources()
+        self._processor.release()
 
-    def __enter__(self, *args, **kwargs) -> deque[Message]:
-        super().__enter__(*args, **kwargs)
-        return self._message_queue
+    def sleep(self, duration: float):
+        sd.sleep(int(duration * 1000))
 
 
 def iter_process(
@@ -306,7 +306,3 @@ def process(
             : processor.num_output_channels, : output_block.shape[1]
         ]
     return output
-
-
-def sleep(duration: float):
-    sd.sleep(int(duration * 1000))
