@@ -86,7 +86,9 @@ def fetch_metadata(
     _, client_secret = _get_client_credentials(reauthenticate)
     metadata_url = f"https://freesound.org/apiv2/sounds/{sound_id}"
     response = requests.get(metadata_url, params={"token": client_secret})
-    if response.status_code != 200:
+    if response.status_code == 404:
+        raise ValueError(f"Sound {sound_id} not found.")
+    elif response.status_code != 200:
         raise Exception(
             f"Error retrieving sound info: {response.status_code} - {response.text}"
         )
