@@ -5,10 +5,9 @@ from typing import Any, Dict
 import sounddevice as sd
 import tqdm
 
-from pyquist.web.freesound import fetch_from_freesound
-
-from . import Audio
+from .audio import Audio
 from .paths import CACHE_DIR
+from .web.freesound import fetch_from_freesound
 
 _SD_DEFAULTS: Dict[str, Any] = {}
 _SD_DEFAULTS_PATH = CACHE_DIR / "sounddevice_defaults.json"
@@ -99,7 +98,7 @@ def play(audio: Audio, *, safe: bool = True, normalize: bool = False):
     audio = audio.clip(in_place=False)
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
-    sd.play(audio.swapaxes(0, 1), audio.sample_rate)
+    sd.play(audio, audio.sample_rate)
     sd.wait()
 
 
@@ -137,7 +136,7 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs) -> Audio:
     # Wait until stream is finished
     sd.wait()
 
-    return Audio.from_array(audio.swapaxes(0, 1), sample_rate)
+    return Audio.from_array(audio, sample_rate)
 
 
 if __name__ == "__main__":
@@ -228,7 +227,3 @@ if __name__ == "__main__":
         if args.output is not None:
             audio.write(args.output)
         play(audio)
-
-
-if __name__ == "__main__":
-    import argparse

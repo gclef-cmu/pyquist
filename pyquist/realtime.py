@@ -154,7 +154,7 @@ class AudioProcessorStream(sd.OutputStream):
         buffer = AudioBuffer(
             num_channels=self._processor.num_output_channels,
             num_samples=self._block_size,
-            array=outdata.swapaxes(0, 1),
+            array=outdata,
         )
 
         # Dequeue all available messages
@@ -260,7 +260,7 @@ def iter_process(
         # Buffer input audio
         if input_audio is not None:
             input_block = input_audio[
-                : processor.num_input_channels, i : i + block_i_size
+                i : i + block_i_size, : processor.num_input_channels
             ]
             block[: input_block.shape[0], : input_block.shape[1]] = input_block
 
@@ -269,9 +269,9 @@ def iter_process(
 
         # Pad end of block with zeros if needed
         if block_i_size < block_size:
-            block[: processor.num_output_channels, block_i_size:] = 0.0
+            block[block_i_size:, : processor.num_output_channels] = 0.0
 
-        yield i, block[: processor.num_output_channels], block_messages
+        yield i, block[:, : processor.num_output_channels], block_messages
 
 
 def process(
@@ -299,10 +299,11 @@ def process(
         pad_end=True,
     ):
         output_block = output[
+            block_offset : block_offset + block.shape[0],
             : processor.num_output_channels,
-            block_offset : block_offset + block.shape[1],
         ]
         output_block[:] = block[
-            : processor.num_output_channels, : output_block.shape[1]
+            : output_block.shape[0],
+            : processor.num_output_channels,
         ]
     return output
