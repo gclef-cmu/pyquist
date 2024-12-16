@@ -117,7 +117,7 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs) -> Audio:
     # Start recording
     sample_rate = round(sd.query_devices(sd.default.device[0])["default_samplerate"])
     num_channels = sd.query_devices(sd.default.device[0])["max_input_channels"]
-    num_samples = round(duration * sample_rate)
+    num_samples = int(duration * sample_rate)
     audio = sd.rec(
         frames=num_samples,
         channels=num_channels,

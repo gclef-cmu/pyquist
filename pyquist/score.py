@@ -69,13 +69,13 @@ def render_score(score: PlayableScore, metronome: Optional[Metronome] = None) ->
     # Output audio
     output = Audio(
         num_channels=num_channels,
-        num_samples=round(duration * sample_rate),
+        num_samples=int(duration * sample_rate),
         sample_rate=sample_rate,
     )
 
     # Mix all sound events
     for time, audio in audios:
-        sample = round(time * sample_rate)
+        sample = int(time * sample_rate)
         output[sample : sample + audio.num_samples, :] += audio
 
     return output
