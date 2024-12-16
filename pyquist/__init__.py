@@ -1,4 +1,5 @@
 from .audio import Audio, AudioBuffer
+from .cli import play
 from .paths import LIB_DIR
 from .realtime import AudioProcessor, AudioProcessorStream
 
@@ -7,6 +8,7 @@ __all__ = [
     "AudioBuffer",
     "AudioProcessor",
     "AudioProcessorStream",
+    "play",
 ]
 
 
