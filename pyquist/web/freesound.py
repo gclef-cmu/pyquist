@@ -11,6 +11,7 @@ from ..audio import Audio
 from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
 
 _CACHE_DIR = _ROOT_CACHE_DIR / "freesound"
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _get_client_credentials(reauthenticate: bool) -> Tuple[str, str]:
