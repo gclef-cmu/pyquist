@@ -11,6 +11,7 @@ from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
 from ..score import BasicMetronome, Metronome, Score
 
 _CACHE_DIR = _ROOT_CACHE_DIR / "theorytab"
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
     "major": (2, 2, 1, 2, 2, 2),
