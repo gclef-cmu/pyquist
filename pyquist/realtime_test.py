@@ -43,7 +43,7 @@ class TestAudioProcessing(unittest.TestCase):
         processor = SineAudioProcessor()
         self.assertEqual(processor.num_input_channels, 1)
         self.assertEqual(processor.num_output_channels, 1)
-        self.assertFalse(processor.prepared)
+        self.assertFalse(processor.ready)
         with self.assertRaises(RuntimeError):
             processor.sample_rate
         with self.assertRaises(RuntimeError):
@@ -52,7 +52,7 @@ class TestAudioProcessing(unittest.TestCase):
     def test_prepare_to_play(self):
         processor = SineAudioProcessor()
         processor.prepare(sample_rate=44100, block_size=512)
-        self.assertTrue(processor.prepared)
+        self.assertTrue(processor.ready)
         self.assertEqual(processor.sample_rate, 44100)
         self.assertEqual(processor.block_size, 512)
 
@@ -60,7 +60,7 @@ class TestAudioProcessing(unittest.TestCase):
         processor = SineAudioProcessor()
         processor.prepare(sample_rate=44100, block_size=512)
         processor.release()
-        self.assertFalse(processor.prepared)
+        self.assertFalse(processor.ready)
         with self.assertRaises(RuntimeError):
             processor.sample_rate
         with self.assertRaises(RuntimeError):

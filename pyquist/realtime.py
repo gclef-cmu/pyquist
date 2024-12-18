@@ -6,6 +6,7 @@ from typing import Any, Iterator, List, Optional, Tuple
 import sounddevice as sd
 
 from .audio import Audio, AudioBuffer
+from .helper import dbfs_to_gain
 
 
 @dataclass
@@ -49,7 +50,7 @@ class AudioProcessor(abc.ABC):
         """Initializes the audio processor."""
         self._sample_rate: Optional[int] = None
         self._block_size: Optional[int] = None
-        self._prepared = False
+        self._ready = False
         self._num_input_channels = num_input_channels
         self._num_output_channels = num_output_channels
 
@@ -64,23 +65,23 @@ class AudioProcessor(abc.ABC):
         return self._num_output_channels
 
     @property
-    def prepared(self) -> bool:
-        """Returns True if the processor is prepared for playback."""
-        return self._prepared
+    def ready(self) -> bool:
+        """Returns True if the processor is ready for playback."""
+        return self._ready
 
     @property
     def sample_rate(self) -> int:
-        """Once prepared, returns the sample rate of the AudioProcessor."""
-        if not self.prepared:
-            raise RuntimeError("Audio processor is not prepared for playback")
+        """Once ready, returns the sample rate of the AudioProcessor."""
+        if not self.ready:
+            raise RuntimeError("Audio processor is not ready for playback")
         assert self._sample_rate is not None
         return self._sample_rate
 
     @property
     def block_size(self) -> int:
-        """Once prepared, returns the block size of the AudioProcessor."""
-        if not self.prepared:
-            raise RuntimeError("Audio processor is not prepared for playback")
+        """Once ready, returns the block size of the AudioProcessor."""
+        if not self.ready:
+            raise RuntimeError("Audio processor is not ready for playback")
         assert self._block_size is not None
         return self._block_size
 
@@ -88,13 +89,13 @@ class AudioProcessor(abc.ABC):
         """Prepares the processor for playback with the given sample rate and block size."""
         self._sample_rate = sample_rate
         self._block_size = block_size
-        self._prepared = True
+        self._ready = True
 
     def release(self):
         """Releases any resources that are no longer needed."""
         self._sample_rate = None
         self._block_size = None
-        self._prepared = False
+        self._ready = False
 
     @abc.abstractmethod
     def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
@@ -112,8 +113,8 @@ class AudioProcessor(abc.ABC):
 
     def __call__(self, buffer: AudioBuffer, messages: List[BlockMessage]):
         """Processes a block of audio with the given messages."""
-        if not self.prepared:
-            raise RuntimeError("Audio processor is not prepared for playback")
+        if not self.ready:
+            raise RuntimeError("Audio processor is not ready for playback")
         self.process_block(buffer, messages)
 
 
@@ -126,6 +127,7 @@ class AudioProcessorStream(sd.OutputStream):
         *,
         block_size: int = 512,
         sample_rate: int = 44100,
+        gain_dbfs: float = 0.0,
     ):
         if processor.num_input_channels > 0:
             raise NotImplementedError("Input channels are not supported yet")
@@ -138,6 +140,7 @@ class AudioProcessorStream(sd.OutputStream):
         self._processor = processor
         self._block_size = block_size
         self._sample_rate = sample_rate
+        self._gain_dbfs = gain_dbfs
         self._message_queue: deque[Message] = deque()
         self._dequeud_messages: list[Message] = []
         self._blocks_elapsed = 0
@@ -181,6 +184,9 @@ class AudioProcessorStream(sd.OutputStream):
         # Process block
         self._processor(buffer, block_messages)
         self._blocks_elapsed += 1
+
+        # Apply gain
+        buffer *= dbfs_to_gain(self._gain_dbfs)
 
     def start(self, *args, **kwargs):
         self._processor.prepare(self._sample_rate, self._block_size)
