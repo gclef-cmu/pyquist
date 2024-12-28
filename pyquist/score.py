@@ -1,4 +1,5 @@
 import abc
+import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .audio import Audio
@@ -69,7 +70,7 @@ def render_score(score: PlayableScore, metronome: Optional[Metronome] = None) ->
     # Output audio
     output = Audio(
         num_channels=num_channels,
-        num_samples=int(duration * sample_rate),
+        num_samples=math.ceil(duration * sample_rate),
         sample_rate=sample_rate,
     )
 
