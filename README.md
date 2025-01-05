@@ -1,17 +1,10 @@
 # `pyquist`
 
-New Python library for CMU 15-322 Intro to Computer Music. WIP.
+Python library for CMU 15-322 Intro to Computer Music. A work in progress.
 
-`pyquist` is not a full-fledged computer music programming framework. You will not find a rich collection of high-level unit generators for synthesis and processing.
+`pyquist` provides a basic foundation for **low-level development of computer music applications in Python / NumPy**.
 
-Instead, `pyquist` provides basic abstractions for adapting Python for lower-level computer music programming via NumPy. It is a simple foundation for building more sophisticated computer music applications.
-
-Principles:
-
-- Simple
-- Minimal dependencies
-- Accessible implementations
-- Well-documented core functionality
+`pyquist` is **designed for teaching**. Accordingly, it lacks a lot of functionality found in found in full-fledged computer music programming frameworks, such as a rich collection of unit generators.
 
 ## Installation
 
@@ -40,7 +33,7 @@ cd examples
 jupyter notebook
 ```
 
-## For development
+## For development on MacOS
 
 ```sh
 git clone git@github.com:gclef-cmu/pyquist.git
@@ -54,8 +47,8 @@ pre-commit install
 
 ## Acknowledgements
 
-Inspired by:
+Some inspiration from:
 
-- Nyquist
-- Tone.js
-- JUCE
+- [Nyquist](https://sourceforge.net/projects/nyquist/)
+- [Tone.js](https://tonejs.github.io/)
+- [JUCE](https://juce.com/)
