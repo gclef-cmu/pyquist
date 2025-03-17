@@ -1,22 +1,52 @@
 import abc
 import math
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeAlias
 
 from .audio import Audio
 
 # Type alias for dictionary of keyword arguments
-_KwargsDict = Dict[str, Any]
+_KwargsDict: TypeAlias = Dict[str, Any]
 
 # Type alias for a timestamped sound event
-SoundEvent = Tuple[float, _KwargsDict]
+SoundEvent: TypeAlias = Tuple[float, _KwargsDict]
 
 # Type alias for a score, a list of sound events
-Score = List[SoundEvent]
+Score: TypeAlias = List[SoundEvent]
 
 # Type alias for an instrument which renders sound events as audio
-Instrument = Callable[..., Audio]
-PlayableSoundEvent = Tuple[float, Instrument, _KwargsDict]
-PlayableScore = List[PlayableSoundEvent]
+Instrument: TypeAlias = Callable[..., Audio]
+PlayableSoundEvent: TypeAlias = Tuple[float, Instrument, _KwargsDict]
+PlayableScore: TypeAlias = List[PlayableSoundEvent]
+
+
+def is_sound_event(obj: Any) -> bool:
+    """Returns True if the object is a sound event."""
+    return (
+        isinstance(obj, tuple)
+        and len(obj) == 2
+        and isinstance(obj[0], (int, float))
+        and isinstance(obj[1], dict)
+    )
+
+
+def is_score(obj: Any) -> bool:
+    """Returns True if the object is a score."""
+    return isinstance(obj, list) and all(is_sound_event(se) for se in obj)
+
+
+def is_playable_sound_event(obj: Any) -> bool:
+    """Returns True if the object is a playable sound event."""
+    return (
+        isinstance(obj, tuple)
+        and len(obj) == 3
+        and callable(obj[1])
+        and is_sound_event((obj[0], obj[2]))
+    )
+
+
+def is_playable_score(obj: Any) -> bool:
+    """Returns True if the object is a playable score."""
+    return isinstance(obj, list) and all(is_playable_sound_event(se) for se in obj)
 
 
 class Metronome(abc.ABC):
