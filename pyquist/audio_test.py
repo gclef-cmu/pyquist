@@ -161,15 +161,15 @@ class TestAudio(unittest.TestCase):
         self.assertIs(stereo.as_stereo(), stereo)
 
         # Mono: duplicates channel
-        mono = Audio(
-            np.arange(10, dtype=np.float32).reshape(10, 1), sample_rate=44100
-        )
+        mono = Audio(np.arange(10, dtype=np.float32).reshape(10, 1), sample_rate=44100)
         result = mono.as_stereo()
         self.assertEqual(result.shape, (10, 2))
         self.assertEqual(result.samples.dtype, np.float32)
         self.assertEqual(result.sample_rate, 44100)
         self.assertTrue(np.array_equal(result.samples[:, 0], result.samples[:, 1]))
-        self.assertTrue(np.array_equal(result.samples[:, 0], np.arange(10, dtype=np.float32)))
+        self.assertTrue(
+            np.array_equal(result.samples[:, 0], np.arange(10, dtype=np.float32))
+        )
 
         # 3+ channels: raises
         multi = Audio(np.zeros((10, 3), dtype=np.float32), sample_rate=44100)

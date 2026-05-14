@@ -87,6 +87,8 @@ def render_score(score: PlayableScore, metronome: Optional[Metronome] = None) ->
     if len(sample_rates) != 1:
         raise ValueError("Inconsistent sample rates")
     sample_rate = sample_rates.pop()
+    if sample_rate is None:
+        raise ValueError("Rendered audio is missing a sample_rate")
 
     # Compute duration
     duration = max(time + audio.duration for time, audio in audios)
