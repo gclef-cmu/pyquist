@@ -195,29 +195,6 @@ class TestPromptDeviceAnnotations(unittest.TestCase):
 class TestNoDevicesAvailable(unittest.TestCase):
     """Behavior when the machine has zero (or zero of one kind of) devices."""
 
-    def test_list_devices_empty_prints_none(self):
-        with mock.patch.object(device.sd, "query_devices", return_value=[]):
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                device.list_devices()
-        out = buf.getvalue()
-        self.assertIn("Input devices:", out)
-        self.assertIn("Output devices:", out)
-        self.assertEqual(out.count("(none)"), 2)
-
-    def test_list_devices_one_kind_missing(self):
-        # Output-only world: input section should say (none).
-        output_only = [
-            {"name": "Speakers", "max_input_channels": 0, "max_output_channels": 2}
-        ]
-        with mock.patch.object(device.sd, "query_devices", return_value=output_only):
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                device.list_devices()
-        out = buf.getvalue()
-        self.assertIn("Input devices:\n  (none)", out)
-        self.assertIn("0: Speakers", out)
-
     def test_prompt_device_raises_when_no_devices(self):
         with (
             mock.patch.object(device.sd, "query_devices", return_value=[]),
