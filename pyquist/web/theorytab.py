@@ -281,7 +281,7 @@ def theorytab_json_to_score(
     return met, melody, harmony
 
 
-def fetch_from_theorytab(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
+def fetch(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
     """Fetches a pop song from TheoryTab and returns a score.
 
     To get an `id_or_url` input:
@@ -300,7 +300,7 @@ if __name__ == "__main__":
     import sys
 
     from ..audio import Audio
-    from ..cli import play
+    from ..device import play
     from ..helper import dbfs_to_gain, pitch_to_frequency
     from ..score import render_score
 
@@ -326,7 +326,7 @@ if __name__ == "__main__":
         return _osc(*args, **kwargs, dbfs=-18)
 
     # Grab score
-    metronome, melody, harmony = fetch_from_theorytab(sys.argv[1])
+    metronome, melody, harmony = fetch(sys.argv[1])
 
     # Convert to playable score
     playable_score = []

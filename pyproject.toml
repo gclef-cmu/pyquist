@@ -43,6 +43,9 @@ notebook = [
 Homepage = "https://github.com/gclef-cmu/pyquist"
 Repository = "https://github.com/gclef-cmu/pyquist"
 
+[project.scripts]
+pyquist = "pyquist.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["pyquist*"]
 exclude = ["examples*", "docs*"]

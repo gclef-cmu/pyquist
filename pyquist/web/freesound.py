@@ -189,15 +189,10 @@ def fetch(
     return Audio.from_file(audio_bytes), metadata
 
 
-# Alias for backwards compatibility
-def fetch_from_freesound(*args, **kwargs) -> Audio:
-    return fetch(*args, **kwargs)[0]
-
-
 if __name__ == "__main__":
     import sys
 
-    from ..cli import play
+    from ..device import play
 
     audio, metadata = fetch(sys.argv[1], preview_okay=True)
     print(json.dumps(metadata, indent=2))

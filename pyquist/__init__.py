@@ -1,5 +1,11 @@
 from .audio import Audio
-from .cli import play
+from .device import (
+    list_devices,
+    play,
+    record,
+    set_input_device,
+    set_output_device,
+)
 from .paths import LIB_DIR
 from .realtime import AudioProcessor, AudioProcessorStream
 
@@ -7,7 +13,11 @@ __all__ = [
     "Audio",
     "AudioProcessor",
     "AudioProcessorStream",
+    "list_devices",
     "play",
+    "record",
+    "set_input_device",
+    "set_output_device",
 ]
 
 
