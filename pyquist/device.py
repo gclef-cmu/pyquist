@@ -80,22 +80,64 @@ def set_output_device(
         _save_defaults(defaults)
 
 
-def play(audio: Audio, *, safe: bool = True, normalize: bool = False) -> None:
-    """Plays the audio from the default output device.
+def _in_ipython_notebook() -> bool:
+    """Returns True if running inside a Jupyter / IPython notebook kernel.
+
+    Distinguishes from the IPython terminal REPL (which uses
+    ``TerminalInteractiveShell``) and from plain Python.
+    """
+    try:
+        from IPython import get_ipython  # type: ignore[import-not-found]
+    except ImportError:
+        return False
+    ipy = get_ipython()
+    return ipy is not None and ipy.__class__.__name__ == "ZMQInteractiveShell"
+
+
+def play(
+    audio: Audio,
+    *,
+    safe: bool = True,
+    normalize: bool = False,
+    force_sounddevice: bool = False,
+) -> None:
+    """Plays an Audio.
+
+    In a Jupyter / IPython notebook this renders an inline player widget via
+    :class:`IPython.display.Audio`. Outside a notebook (or when
+    ``force_sounddevice=True``) it plays through the default output device
+    via :mod:`sounddevice`.
 
     Args:
         audio: The audio to play. Must have a ``sample_rate``.
         safe: If True (default), attenuates the audio to -18 dBFS before
             playback to protect ears against accidentally hot signals.
         normalize: If True, normalizes the audio to 0 dBFS before playback.
+        force_sounddevice: If True, always use sounddevice playback, even
+            when called from a notebook. Useful when you want the audio
+            played through the OS audio output rather than as an inline
+            player widget.
     """
     if normalize:
         audio = audio.normalize(in_place=False)
     audio = audio.clip(in_place=False)
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
-    sd.play(audio, audio.sample_rate)
-    sd.wait()
+
+    if not force_sounddevice and _in_ipython_notebook():
+        # Imported lazily so headless / non-notebook usage doesn't need IPython.
+        from IPython.display import Audio as IPythonAudio, display  # type: ignore[import-not-found] # noqa: I001
+
+        display(
+            IPythonAudio(
+                audio.samples.swapaxes(0, 1),
+                rate=audio.sample_rate,
+                normalize=False,
+            )
+        )
+    else:
+        sd.play(audio, audio.sample_rate)
+        sd.wait()
 
 
 def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audio:

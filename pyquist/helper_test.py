@@ -3,28 +3,52 @@ import unittest
 import numpy as np
 
 from .helper import (
-    dbfs_to_gain,
+    amplitude_to_db,
+    db_to_amplitude,
     frequency_to_pitch,
-    gain_to_dbfs,
     pitch_name_to_pitch,
     pitch_to_frequency,
 )
 
 
 class TestHelper(unittest.TestCase):
-    def test_dbfs_gain_conversion(self):
-        dbfs = np.array([-6.0, -3.0, 0.0, 3.0, 6.0])
-        gain = np.array([0.501187, 0.707946, 1.0, 1.412538, 1.995262])
-        for d, a in zip(dbfs, gain):
-            self.assertAlmostEqual(dbfs_to_gain(d), a, places=5)
-            self.assertAlmostEqual(gain_to_dbfs(a), d, places=5)
-            self.assertAlmostEqual(dbfs_to_gain(gain_to_dbfs(a)), a, places=6)
-            self.assertAlmostEqual(gain_to_dbfs(dbfs_to_gain(d)), d, places=6)
+    def test_db_amplitude_conversion(self):
+        db = np.array([-6.0, -3.0, 0.0, 3.0, 6.0])
+        amp = np.array([0.501187, 0.707946, 1.0, 1.412538, 1.995262])
+        for d, a in zip(db, amp):
+            self.assertAlmostEqual(db_to_amplitude(d), a, places=5)
+            self.assertAlmostEqual(amplitude_to_db(a), d, places=5)
+            self.assertAlmostEqual(db_to_amplitude(amplitude_to_db(a)), a, places=6)
+            self.assertAlmostEqual(amplitude_to_db(db_to_amplitude(d)), d, places=6)
 
-        self.assertTrue(np.allclose(dbfs_to_gain(dbfs), gain))
-        self.assertTrue(np.allclose(gain_to_dbfs(gain), dbfs))
-        self.assertTrue(np.allclose(dbfs_to_gain(gain_to_dbfs(gain)), gain))
-        self.assertTrue(np.allclose(gain_to_dbfs(dbfs_to_gain(dbfs)), dbfs))
+        self.assertTrue(np.allclose(db_to_amplitude(db), amp))
+        self.assertTrue(np.allclose(amplitude_to_db(amp), db))
+        self.assertTrue(np.allclose(db_to_amplitude(amplitude_to_db(amp)), amp))
+        self.assertTrue(np.allclose(amplitude_to_db(db_to_amplitude(db)), db))
+
+    def test_db_amplitude_well_known_values(self):
+        # Sanity-check a few canonical values with default reference=1.0.
+        self.assertAlmostEqual(db_to_amplitude(0.0), 1.0, places=6)
+        self.assertAlmostEqual(db_to_amplitude(-20.0), 0.1, places=6)
+        self.assertAlmostEqual(amplitude_to_db(1.0), 0.0, places=6)
+        self.assertAlmostEqual(amplitude_to_db(0.1), -20.0, places=6)
+
+    def test_db_amplitude_with_reference(self):
+        # 0 dB relative to a reference returns the reference itself.
+        self.assertAlmostEqual(db_to_amplitude(0.0, reference=0.5), 0.5, places=6)
+        self.assertAlmostEqual(db_to_amplitude(0.0, reference=2.0), 2.0, places=6)
+        # Conversely, an amplitude equal to the reference is 0 dB relative.
+        self.assertAlmostEqual(amplitude_to_db(0.5, reference=0.5), 0.0, places=6)
+        self.assertAlmostEqual(amplitude_to_db(2.0, reference=2.0), 0.0, places=6)
+        # -6 dB below a non-unity reference still halves the level (roughly).
+        self.assertAlmostEqual(
+            db_to_amplitude(-6.0, reference=0.5), 0.5 * 0.501187, places=5
+        )
+        # Round-trip with a non-unity reference.
+        for ref in [0.25, 0.5, 2.0, 10.0]:
+            for d in [-12.0, -3.0, 0.0, 6.0]:
+                a = db_to_amplitude(d, reference=ref)
+                self.assertAlmostEqual(amplitude_to_db(a, reference=ref), d, places=6)
 
     def test_frequency_pitch_conversion(self):
         frequency = np.array([440.0, 523.251, 659.255, 783.991, 987.767])

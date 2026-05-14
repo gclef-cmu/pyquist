@@ -6,7 +6,7 @@ import numpy as np
 import resampy
 import soundfile as sf
 
-from .helper import dbfs_to_gain
+from .helper import db_to_amplitude
 
 
 class Audio:
@@ -191,11 +191,12 @@ class Audio:
         return self.num_samples / self._sample_rate
 
     @property
-    def peak_gain(self) -> float:
+    def peak_amplitude(self) -> float:
         """Peak absolute sample value across all samples and channels.
 
         This is a linear amplitude (not decibels): ``1.0`` corresponds to
-        digital full scale. Empty audio returns ``0.0``.
+        digital full scale. Empty audio returns ``0.0``. Use
+        :func:`pyquist.helper.amplitude_to_db` to convert to dBFS.
         """
         if self._samples.size == 0:
             return 0.0
@@ -209,6 +210,41 @@ class Audio:
         Shape, dtype, and ``sample_rate`` are unchanged.
         """
         self._samples.fill(0.0)
+
+    def segment(
+        self,
+        *,
+        offset: Optional[float] = None,
+        duration: Optional[float] = None,
+    ) -> "Audio":
+        """Returns a new ``Audio`` containing a time-slice of this one.
+
+        Both ``offset`` and ``duration`` are in seconds and require
+        ``sample_rate`` to be set. Out-of-range values are clamped: a negative
+        ``offset`` is treated as zero, and a ``duration`` that runs past the
+        end is truncated. With both arguments ``None`` this is a no-op that
+        returns ``self``.
+
+        Args:
+            offset: Start time in seconds. Defaults to the beginning.
+            duration: Length in seconds. Defaults to the rest of the audio.
+
+        Returns:
+            A new ``Audio`` carrying the same ``sample_rate`` as ``self``.
+        """
+        if offset is None and duration is None:
+            return self
+        if self._sample_rate is None:
+            raise ValueError("segment() requires a sample_rate.")
+        start = max(0, int((offset or 0.0) * self._sample_rate))
+        end = (
+            self.num_samples
+            if duration is None
+            else start + int(duration * self._sample_rate)
+        )
+        start = min(start, self.num_samples)
+        end = max(start, min(end, self.num_samples))
+        return Audio(self._samples[start:end, :], sample_rate=self._sample_rate)
 
     def normalize(self, *, peak_dbfs: float = 0.0, in_place: bool = True) -> "Audio":
         """Scales the audio so its peak amplitude matches ``peak_dbfs``.
@@ -224,30 +260,30 @@ class Audio:
                 If ``False``, returns a new ``Audio`` and leaves the original
                 untouched.
         """
-        peak = self.peak_gain
+        peak = self.peak_amplitude
         if peak == 0.0:
             gain = 1.0
         else:
-            gain = float(dbfs_to_gain(peak_dbfs)) / peak
+            gain = float(db_to_amplitude(peak_dbfs)) / peak
         if in_place:
             self._samples *= gain
             return self
         return Audio(self._samples * gain, sample_rate=self._sample_rate)
 
-    def clip(self, *, peak_gain: float = 1.0, in_place: bool = True) -> "Audio":
-        """Symmetrically clamps every sample to ``[-peak_gain, +peak_gain]``.
+    def clip(self, *, peak_amplitude: float = 1.0, in_place: bool = True) -> "Audio":
+        """Symmetrically clamps every sample to ``[-peak_amplitude, +peak_amplitude]``.
 
         This is a hard clip — samples beyond the threshold are truncated, not
         scaled. To rescale instead, use :meth:`normalize`.
 
         Args:
-            peak_gain: Symmetric clip threshold in linear amplitude. Defaults
-                to ``1.0`` (digital full scale).
+            peak_amplitude: Symmetric clip threshold in linear amplitude.
+                Defaults to ``1.0`` (digital full scale).
             in_place: If ``True`` (default), modifies and returns ``self``.
                 If ``False``, returns a new ``Audio`` and leaves the original
                 untouched.
         """
-        clipped = np.clip(self._samples, -peak_gain, peak_gain)
+        clipped = np.clip(self._samples, -peak_amplitude, peak_amplitude)
         if in_place:
             self._samples[:] = clipped
             return self

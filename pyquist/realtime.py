@@ -6,7 +6,7 @@ from typing import Any, Iterator, List, Optional, Tuple
 import sounddevice as sd
 
 from .audio import Audio
-from .helper import dbfs_to_gain
+from .helper import db_to_amplitude
 
 
 @dataclass
@@ -183,7 +183,7 @@ class AudioProcessorStream(sd.OutputStream):
         self._blocks_elapsed += 1
 
         # Apply gain
-        buffer *= dbfs_to_gain(self._gain_dbfs)
+        buffer *= db_to_amplitude(self._gain_dbfs)
 
     def start(self, *args, **kwargs):
         self._processor.prepare(self._sample_rate, self._block_size)

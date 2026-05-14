@@ -37,6 +37,8 @@ dev = [
 ]
 notebook = [
     "ipython",
+    "matplotlib",
+    "scipy",
 ]
 
 [project.urls]

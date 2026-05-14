@@ -14,7 +14,7 @@ from .device import (
     set_input_device,
     set_output_device,
 )
-from .web.freesound import fetch as fetch_from_freesound
+from .web.freesound import fetch_freesound
 
 
 def _cmd_devices(args: argparse.Namespace) -> None:
@@ -37,7 +37,9 @@ def _cmd_record(args: argparse.Namespace) -> None:
 
 
 def _cmd_freesound(args: argparse.Namespace) -> None:
-    audio, _ = fetch_from_freesound(args.url)
+    audio, metadata = fetch_freesound(args.url)
+    for key in ("id", "name", "url", "license", "description"):
+        print(f"{key}: {metadata.get(key, '')}")
     if args.output:
         audio.write(args.output)
     play(audio)

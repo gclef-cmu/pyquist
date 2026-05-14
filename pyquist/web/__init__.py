@@ -1,7 +1,7 @@
-from .freesound import fetch as fetch_from_freesound
-from .theorytab import fetch as fetch_from_theorytab
+from .freesound import fetch_freesound
+from .theorytab import fetch as fetch_theorytab
 
 __all__ = [
-    "fetch_from_freesound",
-    "fetch_from_theorytab",
+    "fetch_freesound",
+    "fetch_theorytab",
 ]

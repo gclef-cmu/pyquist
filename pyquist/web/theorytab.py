@@ -8,7 +8,7 @@ import requests
 
 from ..helper import pitch_name_to_pitch
 from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
-from ..score import BasicMetronome, Metronome, Score
+from ..score import BasicMetronome, Metronome, Score, SoundEvent
 
 _CACHE_DIR = _ROOT_CACHE_DIR / "theorytab"
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -254,7 +254,7 @@ def theorytab_json_to_score(
         if not durations_in_beats:
             duration = met.beat_to_time(duration)
         pitch = _theorytab_note_to_pitch(note, key) + melody_octave * 12
-        melody.append((beat, {"duration": duration, "pitch": pitch}))
+        melody.append(SoundEvent(beat, {"duration": duration, "pitch": pitch}))
     melody = sorted(melody, key=lambda x: x[0])
 
     # Parse chords
@@ -268,12 +268,12 @@ def theorytab_json_to_score(
             duration = met.beat_to_time(duration)
         if harmony_type == HarmonyType.SYMBOL:
             symbol = _theorytab_chord_to_symbol(chord, key)
-            harmony.append((beat, {"duration": duration, "symbol": symbol}))
+            harmony.append(SoundEvent(beat, {"duration": duration, "symbol": symbol}))
         elif harmony_type == HarmonyType.ROOT_POSITION_NOTES:
             pitches = _theorytab_chord_to_pitches(chord, key)
             pitches = [p + harmony_octave * 12 for p in pitches]
             for pitch in pitches:
-                harmony.append((beat, {"duration": duration, "pitch": pitch}))
+                harmony.append(SoundEvent(beat, {"duration": duration, "pitch": pitch}))
         else:
             raise NotImplementedError()
     harmony = sorted(harmony, key=lambda x: x[0])
@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
     from ..audio import Audio
     from ..device import play
-    from ..helper import dbfs_to_gain, pitch_to_frequency
+    from ..helper import db_to_amplitude, pitch_to_frequency
     from ..score import render_score
 
     # Get ID from command line
@@ -315,7 +315,9 @@ if __name__ == "__main__":
         duration: float, pitch: int, dbfs: float, sample_rate: int = 44100
     ) -> Audio:
         t = np.arange(int(duration * sample_rate)) / sample_rate
-        result = np.sin(2 * np.pi * t * pitch_to_frequency(pitch)) * dbfs_to_gain(dbfs)
+        result = np.sin(2 * np.pi * t * pitch_to_frequency(pitch)) * db_to_amplitude(
+            dbfs
+        )
         # TODO(chrisdonahue): Add envelope
         return Audio(result, sample_rate=sample_rate)
 
@@ -325,15 +327,15 @@ if __name__ == "__main__":
     def _harmony(*args, **kwargs):
         return _osc(*args, **kwargs, dbfs=-18)
 
+    from ..score import bind_instrument
+
     # Grab score
     metronome, melody, harmony = fetch(sys.argv[1])
 
-    # Convert to playable score
-    playable_score = []
-    for time, kwargs in melody:
-        playable_score.append((time, _melody, kwargs))
-    for time, kwargs in harmony:
-        playable_score.append((time, _harmony, kwargs))
+    # Bind instruments to each part and concatenate into one playable score.
+    playable_score = bind_instrument(melody, _melody) + bind_instrument(
+        harmony, _harmony
+    )
 
     # Play audio
     play(render_score(playable_score, metronome), normalize=True)

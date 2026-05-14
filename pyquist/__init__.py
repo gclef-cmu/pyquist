@@ -6,6 +6,7 @@ from .device import (
     set_output_device,
 )
 from .paths import LIB_DIR
+from .plot import plot, plot_freq, plot_spec
 from .realtime import AudioProcessor, AudioProcessorStream
 
 __all__ = [
@@ -13,6 +14,9 @@ __all__ = [
     "AudioProcessor",
     "AudioProcessorStream",
     "play",
+    "plot",
+    "plot_freq",
+    "plot_spec",
     "record",
     "set_input_device",
     "set_output_device",

@@ -406,5 +406,55 @@ class TestApplyPersistedDefaults(unittest.TestCase):
         self.assertIn("pyquist devices", msg)
 
 
+class TestPlayDispatch(unittest.TestCase):
+    """``play`` picks the right backend based on context."""
+
+    def _make_audio(self):
+        import numpy as np
+
+        from .audio import Audio
+
+        return Audio(np.zeros(100, dtype=np.float32), sample_rate=44100)
+
+    def test_uses_sounddevice_outside_notebook(self):
+        audio = self._make_audio()
+        with (
+            mock.patch.object(device, "_in_ipython_notebook", return_value=False),
+            mock.patch.object(device.sd, "play") as mock_play,
+            mock.patch.object(device.sd, "wait") as mock_wait,
+        ):
+            device.play(audio)
+            mock_play.assert_called_once()
+            mock_wait.assert_called_once()
+
+    def test_uses_ipython_in_notebook(self):
+        audio = self._make_audio()
+        # Build a fake IPython.display module with Audio + display
+        fake_display = mock.MagicMock()
+        fake_audio_widget = mock.MagicMock()
+        fake_module = mock.MagicMock()
+        fake_module.Audio = fake_audio_widget
+        fake_module.display = fake_display
+        with (
+            mock.patch.object(device, "_in_ipython_notebook", return_value=True),
+            mock.patch.dict("sys.modules", {"IPython.display": fake_module}),
+            mock.patch.object(device.sd, "play") as mock_play,
+        ):
+            device.play(audio)
+            mock_play.assert_not_called()
+            fake_audio_widget.assert_called_once()
+            fake_display.assert_called_once()
+
+    def test_force_sounddevice_overrides_notebook(self):
+        audio = self._make_audio()
+        with (
+            mock.patch.object(device, "_in_ipython_notebook", return_value=True),
+            mock.patch.object(device.sd, "play") as mock_play,
+            mock.patch.object(device.sd, "wait"),
+        ):
+            device.play(audio, force_sounddevice=True)
+            mock_play.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
