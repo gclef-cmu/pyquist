@@ -21,11 +21,6 @@ _DEFAULTS_PATH = CACHE_DIR / "device_defaults.json"
 DeviceRef = Union[int, str]
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def set_input_device(
     device_id_or_name: Optional[DeviceRef] = None,
     *,
@@ -167,11 +162,6 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audi
                 time.sleep(duration / 100)
     sd.wait()
     return Audio(samples, sample_rate=sample_rate)
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _resolve_device(device_id_or_name: DeviceRef, kind: str) -> Tuple[int, str]:
