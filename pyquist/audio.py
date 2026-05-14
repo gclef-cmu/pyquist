@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import IO, Optional
+from typing import IO, Optional, Union
 from urllib.request import urlopen
 
 import numpy as np
@@ -9,266 +9,419 @@ import soundfile as sf
 from .helper import dbfs_to_gain
 
 
-class AudioBuffer(np.ndarray):
+class Audio:
+    """A wrapper around a 2D float32 numpy array of audio samples.
+
+    By convention, sample values in ``[-1.0, 1.0]`` correspond to digital
+    full-scale amplitude. Values outside this range are valid in memory but
+    will clip when sent to playback or written to most file formats.
+
+    Attributes:
+        samples: A numpy array of shape ``(num_samples, num_channels)`` and
+            dtype ``np.float32``. Assigning to this attribute validates the
+            value and reshapes 0-D / 1-D inputs as needed (see the setter).
+        sample_rate: The sample rate in Hz (e.g. ``44100``). May be ``None``
+            for buffers that have no defined rate, such as raw sample buffers.
+
+    Example:
+        >>> import numpy as np
+        >>> import pyquist as pq
+        >>> sr = 44100
+        >>> t = np.arange(sr) / sr
+        >>> audio = pq.Audio(np.sin(2 * np.pi * 440 * t), sample_rate=sr)
+        >>> pq.play(audio)
     """
-    Represents a buffer of raw audio samples.
 
-    Type signature inspired by JUCE AudioBuffer.
-
-    https://docs.juce.com/master/classAudioBuffer.html
-    """
-
-    def __new__(
-        cls,
-        *,
-        num_samples: int,
-        num_channels: int,
-        array: Optional[np.ndarray] = None,
+    def __init__(
+        self,
+        samples: np.ndarray,
+        sample_rate: Optional[int] = None,
     ):
+        """Wraps an existing numpy array as ``Audio``.
+
+        Args:
+            samples: A numpy array of samples. Accepted as 0-D, 1-D, or 2-D
+                (see the ``samples`` setter for shape normalization). Must be
+                ``float32`` or ``float64`` (the latter is auto-converted).
+            sample_rate: Optional sample rate in Hz; ``None`` for unspecified
+                (e.g. when used as a real-time block buffer).
         """
-        Initializes a buffer of raw 32-bit float audio samples.
-
-        Parameters:
-            num_samples: The number of samples in the buffer.
-            num_channels: The number of channels in the buffer.
-            array: An optional numpy array to use as the buffer.
-                   If None, a zero-filled buffer will be created.
-                   Must be same shape as num_channels / num_samples.
-        """
-        if num_samples < 0:
-            raise ValueError("The number of samples must be non-negative.")
-        if num_channels < 0:
-            raise ValueError("The number of channels must be non-negative.")
-        if array is None:
-            array = np.zeros((num_samples, num_channels), dtype=np.float32)
-        else:
-            if array.shape != (num_samples, num_channels):
-                raise ValueError("Array shape must match num_channels and num_samples.")
-            if array.dtype != np.float32:
-                raise TypeError("Array must have dtype np.float32.")
-        obj = array.view(cls)
-        return obj
-
-    def __getitem__(self, *args, **kwargs):
-        """Ensure any non-2D slices return ndarray instead of AudioBuffer."""
-        result = super().__getitem__(*args, **kwargs)
-        return result if result.ndim == 2 else result.view(np.ndarray)
-
-    def __array_wrap__(self, result, *args, **kwargs):
-        """Ensures that output of ufuncs like sum() is np.ndarray or scalar."""
-        if result.ndim == 0:
-            return result[()]
-        else:
-            result = super().__array_wrap__(result, *args, **kwargs)
-            return result if result.ndim == 2 else result.view(np.ndarray)
-
-    def __array_function__(self, func, types, *args, **kwargs):
-        """Handles casting of ndarrays, etc. before array_wrap.
-
-        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__
-        """
-
-        # Perform the default operation
-        result = super().__array_function__(func, types, *args, **kwargs)
-
-        if isinstance(result, np.ndarray):
-            result = result.view(AudioBuffer)
-        return result
-
-    def __array_finalize__(self, obj):
-        """Called after array viewing, slicing, creating from template, etc."""
-
-        # See: https://stackoverflow.com/a/60216773
-        if obj is None:
-            return
-
-    @property
-    def num_samples(self) -> int:
-        """Returns the number of samples in the buffer."""
-        return self.shape[0]
-
-    @property
-    def num_channels(self) -> int:
-        """Returns the number of channels in the buffer."""
-        return self.shape[1]
-
-    def clear(self):
-        """Clears the buffer by zeroing all samples."""
-        self.fill(0.0)
-
-
-class Audio(AudioBuffer):
-
-    def __new__(
-        cls,
-        *args,
-        sample_rate: int,
-        **kwargs,
-    ):
-        """
-        Initializes an audio waveform (AudioBuffer with a sample rate).
-
-        Parameters:
-            sample_rate: The sample rate of the audio.
-        """
-        if sample_rate <= 0:
-            raise ValueError("The number of samples must be positive.")
-        obj = super().__new__(cls, *args, **kwargs)
-        obj._sample_rate = sample_rate
-        return obj
-
-    def __array_function__(self, func, types, *args, **kwargs):
-        """Ensure sample_rate is passed along for functions like np.concatenate.
-
-        See https://numpy.org/doc/stable/reference/arrays.classes.html#numpy.class.__array_function__
-        """
-
-        # Extract sample rates from all Audio instances in args
-        def extract_sample_rates(arg):
-            if isinstance(arg, Audio):
-                return [arg.sample_rate]
-            elif isinstance(arg, (list, tuple)):  # Handle nested structures
-                return [rate for elem in arg for rate in extract_sample_rates(elem)]
-            elif isinstance(
-                arg, dict
-            ):  # Handle values of dict, rarely used in Numpy, but possible
-                return [
-                    rate for elem in arg.values() for rate in extract_sample_rates(elem)
-                ]
-            else:
-                return []
-
-        sample_rates = extract_sample_rates(args)
-
-        # Check if all sample rates are compatible
-        if len(set(sample_rates)) > 1:
-            raise ValueError("Sample rates must match for operation.")
-
-        # Perform the default operation
-        result = super().__array_function__(func, types, *args, **kwargs)
-
-        # If the result is an array, add the sample_rate metadata
-        if isinstance(result, np.ndarray):
-            result = result.view(Audio)
-            if isinstance(result, Audio):
-                result._sample_rate = self.sample_rate
-        return result
-
-    def __array_finalize__(self, obj):
-        """Called after array viewing, slicing, creating from template, etc."""
-
-        # See: https://stackoverflow.com/a/60216773
-        if obj is None:
-            return
-        self._sample_rate = getattr(obj, "_sample_rate", None)
-
-    @property
-    def sample_rate(self) -> int:
-        """Returns the sample rate of the audio."""
-        return self._sample_rate
-
-    @property
-    def duration(self) -> float:
-        """Returns the duration of the audio in seconds."""
-        return self.num_samples / self.sample_rate
-
-    @property
-    def peak_gain(self) -> float:
-        """Returns the peak amplitude of the audio."""
-        return float(np.abs(self).max())
-
-    def normalize(self, *, peak_dbfs: float = 0.0, in_place: bool = True) -> "Audio":
-        """Returns a normalized version of the audio."""
-        peak_gain = self.peak_gain
-        if peak_gain == 0.0:
-            gain = 1.0
-        else:
-            gain = dbfs_to_gain(peak_dbfs) / peak_gain
-        if in_place:
-            self[:] *= gain
-            result = self
-        else:
-            result = Audio.from_array(self * gain, self.sample_rate)
-        return result
-
-    def clip(self, *, peak_gain: float = 1.0, in_place: bool = True) -> "Audio":
-        """Clips the audio to a peak gain."""
-        clipped = np.clip(self, -peak_gain, peak_gain)
-        if in_place:
-            self[:] = clipped
-            result = self
-        else:
-            result = Audio.from_array(clipped, self.sample_rate)
-        return result
-
-    def resample(self, new_sample_rate: int, **kwargs) -> "Audio":
-        """
-        Resamples the waveform to a new sample rate.
-
-        Parameters:
-            new_sample_rate: The new sample rate to resample to.
-        """
-        resampled = resampy.resample(
-            self, self.sample_rate, new_sample_rate, axis=0, **kwargs
-        )
-        return Audio(
-            num_channels=self.num_channels,
-            num_samples=resampled.shape[0],
-            array=resampled,
-            sample_rate=new_sample_rate,
-        )
-
-    def write(self, file: str | IO, **kwargs):
-        """
-        Writes the audio to a file.
-
-        Parameters:
-            file: The path to the file or a file-like object.
-        """
-
-        sf.write(file, self, self.sample_rate, **kwargs)
+        self.samples = samples
+        self.sample_rate = sample_rate
 
     @classmethod
-    def from_array(cls, array: np.ndarray, sample_rate: int) -> "Audio":
-        """
-        Creates an AudioBuffer from a numpy array.
+    def zeros(
+        cls,
+        num_samples: int,
+        num_channels: int,
+        sample_rate: Optional[int] = None,
+    ) -> "Audio":
+        """Creates a silent (zero-filled) ``Audio`` of the given shape.
 
-        Parameters:
-            array: The numpy array of audio samples.
-            sample_rate: The sample rate of the audio.
+        Useful as a destination buffer that you fill in via ``audio.samples``
+        or via in-place arithmetic.
+
+        Args:
+            num_samples: Number of samples per channel. Must be ``>= 0``.
+            num_channels: Number of channels (1 for mono, 2 for stereo).
+                Must be ``>= 0``.
+            sample_rate: Optional sample rate in Hz.
         """
-        if array.ndim == 0:
-            array = array[np.newaxis, np.newaxis]
-        elif array.ndim == 1:
-            array = array[:, np.newaxis]
-        elif array.ndim > 2:
-            raise ValueError("Array must have shape (num_samples, num_channels).")
-        if array.dtype == np.float64:
-            array = array.astype(np.float32)
-        return Audio(
-            num_samples=array.shape[0],
-            num_channels=array.shape[1],
-            array=array,
+        if num_samples < 0:
+            raise ValueError("num_samples must be non-negative.")
+        if num_channels < 0:
+            raise ValueError("num_channels must be non-negative.")
+        return cls(
+            np.zeros((num_samples, num_channels), dtype=np.float32),
             sample_rate=sample_rate,
         )
 
     @classmethod
-    def from_file(cls, file: str | IO) -> "Audio":
-        """
-        Creates an AudioBuffer from a file.
+    def from_file(cls, file: Union[str, IO]) -> "Audio":
+        """Loads an ``Audio`` from a file on disk or a file-like object.
 
-        Parameters:
-            file: The path to the file or a file-like object.
+        Decoding is delegated to ``soundfile`` (libsndfile), which supports
+        WAV, FLAC, OGG, MP3, and most common formats. The file's native sample
+        rate is preserved; channels remain in their original order. Use
+        :meth:`resample` to change the rate after loading.
         """
-        return cls.from_array(*sf.read(file))
+        samples, sample_rate = sf.read(file)
+        return cls(samples, sample_rate=sample_rate)
 
     @classmethod
     def from_url(cls, url: str) -> "Audio":
-        """
-        Creates an AudioBuffer from a URL.
+        """Downloads an audio file from a URL and loads it as ``Audio``.
 
-        Parameters:
-            url: The URL of the audio file.
+        The full response is buffered in memory before decoding.
         """
-
         return cls.from_file(BytesIO(urlopen(url).read()))
+
+    # --- Core attributes ----------------------------------------------------
+
+    @property
+    def samples(self) -> np.ndarray:
+        """The underlying ``(num_samples, num_channels)`` ``float32`` array.
+
+        Returned by reference: in-place mutations (``audio.samples[0] = 0``,
+        ``audio.samples *= 0.5``) modify the audio directly. Reassigning the
+        attribute (``audio.samples = new_array``) re-runs validation.
+        """
+        return self._samples
+
+    @samples.setter
+    def samples(self, value: np.ndarray) -> None:
+        """Validates and stores ``value`` as the underlying sample array.
+
+        Three conveniences are applied before validation:
+
+        * a 0-D array becomes shape ``(1, 1)``;
+        * a 1-D array of length ``n`` becomes shape ``(n, 1)`` (mono);
+        * a ``float64`` array is cast to ``float32``.
+
+        Anything else with the wrong dtype raises ``TypeError``; arrays with
+        more than 2 dimensions raise ``ValueError``. When ``value`` is already
+        a 2-D ``float32`` array, it is stored by reference (no copy) — this
+        is what allows ``Audio`` to act as a thin view over an externally
+        owned buffer (e.g. the ``outdata`` array in a real-time callback).
+        """
+        if not isinstance(value, np.ndarray):
+            raise TypeError(
+                f"samples must be a numpy.ndarray, got {type(value).__name__}."
+            )
+        if value.ndim == 0:
+            value = value[np.newaxis, np.newaxis]
+        elif value.ndim == 1:
+            value = value[:, np.newaxis]
+        elif value.ndim > 2:
+            raise ValueError(
+                f"samples must have shape (num_samples, num_channels); "
+                f"got array with {value.ndim} dimensions."
+            )
+        if value.dtype == np.float64:
+            value = value.astype(np.float32)
+        if value.dtype != np.float32:
+            raise TypeError(f"samples must have dtype np.float32, got {value.dtype}.")
+        self._samples = value
+
+    @property
+    def sample_rate(self) -> Optional[int]:
+        """The sample rate in Hz, or ``None`` if unspecified."""
+        return self._sample_rate
+
+    @sample_rate.setter
+    def sample_rate(self, value: Optional[int]) -> None:
+        """Sets the sample rate.
+
+        Accepts a positive ``int`` or ``None``. Non-int values raise
+        ``TypeError``; zero or negative values raise ``ValueError``.
+        """
+        if value is None:
+            self._sample_rate = None
+            return
+        if not isinstance(value, (int, np.integer)):
+            raise TypeError(
+                f"sample_rate must be int or None, got {type(value).__name__}."
+            )
+        if value <= 0:
+            raise ValueError(f"sample_rate must be positive, got {value}.")
+        self._sample_rate = int(value)
+
+    # --- Shape-derived properties ------------------------------------------
+
+    @property
+    def num_samples(self) -> int:
+        """Number of samples per channel (``samples.shape[0]``)."""
+        return self._samples.shape[0]
+
+    @property
+    def num_channels(self) -> int:
+        """Number of channels (``samples.shape[1]``); 1 for mono, 2 for stereo."""
+        return self._samples.shape[1]
+
+    @property
+    def shape(self) -> tuple:
+        """Shape of the underlying array: ``(num_samples, num_channels)``."""
+        return self._samples.shape
+
+    @property
+    def duration(self) -> float:
+        """Duration of the audio in seconds. Requires sample_rate to be set."""
+        if self._sample_rate is None:
+            raise ValueError("Cannot compute duration without a sample_rate.")
+        return self.num_samples / self._sample_rate
+
+    @property
+    def peak_gain(self) -> float:
+        """Peak absolute sample value across all samples and channels.
+
+        This is a linear amplitude (not decibels): ``1.0`` corresponds to
+        digital full scale. Empty audio returns ``0.0``.
+        """
+        if self._samples.size == 0:
+            return 0.0
+        return float(np.abs(self._samples).max())
+
+    # --- Mutation methods ---------------------------------------------------
+
+    def clear(self) -> None:
+        """Fills the audio with silence (zeros) in place.
+
+        Shape, dtype, and ``sample_rate`` are unchanged.
+        """
+        self._samples.fill(0.0)
+
+    def normalize(self, *, peak_dbfs: float = 0.0, in_place: bool = True) -> "Audio":
+        """Scales the audio so its peak amplitude matches ``peak_dbfs``.
+
+        ``peak_dbfs`` is measured in decibels relative to digital full scale
+        (dBFS). ``0.0`` means full-scale (peak = 1.0); ``-6.0`` means roughly
+        half full-scale (peak ≈ 0.501); positive values exceed full scale and
+        will clip on playback. Silent audio (all zeros) is returned unchanged.
+
+        Args:
+            peak_dbfs: Target peak level in dBFS. Defaults to ``0.0``.
+            in_place: If ``True`` (default), modifies and returns ``self``.
+                If ``False``, returns a new ``Audio`` and leaves the original
+                untouched.
+        """
+        peak = self.peak_gain
+        if peak == 0.0:
+            gain = 1.0
+        else:
+            gain = dbfs_to_gain(peak_dbfs) / peak
+        if in_place:
+            self._samples *= gain
+            return self
+        return Audio(self._samples * gain, sample_rate=self._sample_rate)
+
+    def clip(self, *, peak_gain: float = 1.0, in_place: bool = True) -> "Audio":
+        """Symmetrically clamps every sample to ``[-peak_gain, +peak_gain]``.
+
+        This is a hard clip — samples beyond the threshold are truncated, not
+        scaled. To rescale instead, use :meth:`normalize`.
+
+        Args:
+            peak_gain: Symmetric clip threshold in linear amplitude. Defaults
+                to ``1.0`` (digital full scale).
+            in_place: If ``True`` (default), modifies and returns ``self``.
+                If ``False``, returns a new ``Audio`` and leaves the original
+                untouched.
+        """
+        clipped = np.clip(self._samples, -peak_gain, peak_gain)
+        if in_place:
+            self._samples[:] = clipped
+            return self
+        return Audio(clipped, sample_rate=self._sample_rate)
+
+    def as_mono(self) -> "Audio":
+        """Returns a mono (1-channel) version of the audio.
+
+        Multi-channel audio is mixed down by averaging across channels
+        (mean, not sum), which preserves perceived loudness without risking
+        clipping. If the audio is already mono, returns ``self`` (no copy).
+        """
+        if self.num_channels == 1:
+            return self
+        mono = self._samples.mean(axis=1, keepdims=True).astype(np.float32)
+        return Audio(mono, sample_rate=self._sample_rate)
+
+    def as_stereo(self) -> "Audio":
+        """Returns a stereo (2-channel) version of the audio.
+
+        Mono audio is duplicated across both channels (the same signal in
+        L and R). Stereo audio is returned as ``self`` (no copy). Audio with
+        3 or more channels raises ``ValueError`` — this method does not try
+        to guess a downmix.
+        """
+        if self.num_channels == 2:
+            return self
+        if self.num_channels == 1:
+            stereo = np.repeat(self._samples, 2, axis=1)
+            return Audio(stereo, sample_rate=self._sample_rate)
+        raise ValueError(
+            f"Cannot convert audio with {self.num_channels} channels to stereo."
+        )
+
+    def resample(self, new_sample_rate: int, **kwargs) -> "Audio":
+        """Returns a new ``Audio`` resampled to ``new_sample_rate``.
+
+        Resampling is performed by ``resampy`` using a polyphase bandlimited
+        filter; extra keyword arguments (e.g. ``filter='kaiser_fast'``) are
+        forwarded to :func:`resampy.resample`. The number of channels is
+        preserved; the number of samples scales by
+        ``new_sample_rate / self.sample_rate``.
+
+        Raises ``ValueError`` if ``self.sample_rate`` is ``None`` or
+        ``new_sample_rate`` is non-positive.
+        """
+        if self._sample_rate is None:
+            raise ValueError("Cannot resample without a sample_rate.")
+        if not isinstance(new_sample_rate, (int, np.integer)):
+            raise TypeError("new_sample_rate must be an int.")
+        if new_sample_rate <= 0:
+            raise ValueError("new_sample_rate must be positive.")
+        resampled = resampy.resample(
+            self._samples, self._sample_rate, new_sample_rate, axis=0, **kwargs
+        )
+        return Audio(resampled, sample_rate=new_sample_rate)
+
+    def write(self, file: Union[str, IO], **kwargs) -> None:
+        """Writes the audio to a file via ``soundfile``.
+
+        The output format is inferred from the file extension (``.wav``,
+        ``.flac``, ``.ogg``, ...). Extra keyword arguments are forwarded to
+        :func:`soundfile.write` (e.g. ``subtype='PCM_24'``). Samples outside
+        ``[-1.0, 1.0]`` will clip in fixed-point formats; consider calling
+        :meth:`clip` or :meth:`normalize` first.
+
+        Raises ``ValueError`` if ``self.sample_rate`` is ``None``.
+        """
+        if self._sample_rate is None:
+            raise ValueError("Cannot write audio without a sample_rate.")
+        sf.write(file, self._samples, self._sample_rate, **kwargs)
+
+    # --- numpy interop ------------------------------------------------------
+
+    def __array__(self, dtype=None) -> np.ndarray:
+        if dtype is None:
+            return self._samples
+        return self._samples.astype(dtype)
+
+    # --- Indexing / length --------------------------------------------------
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, key):
+        return self._samples[key]
+
+    def __setitem__(self, key, value) -> None:
+        self._samples[key] = value
+
+    # --- Arithmetic ---------------------------------------------------------
+
+    def _check_compatible(self, other: "Audio") -> Optional[int]:
+        """Validates that ``other`` can be combined with ``self`` and returns
+        the sample rate the result should carry."""
+        if self.shape != other.shape:
+            raise ValueError(f"Shape mismatch: {self.shape} vs {other.shape}.")
+        if (
+            self._sample_rate is not None
+            and other._sample_rate is not None
+            and self._sample_rate != other._sample_rate
+        ):
+            raise ValueError(
+                f"Sample rate mismatch: {self._sample_rate} != {other._sample_rate}."
+            )
+        return (
+            self._sample_rate if self._sample_rate is not None else other._sample_rate
+        )
+
+    def _binary_op(self, other, op) -> "Audio":
+        if isinstance(other, Audio):
+            sr = self._check_compatible(other)
+            return Audio(op(self._samples, other._samples), sample_rate=sr)
+        return Audio(op(self._samples, other), sample_rate=self._sample_rate)
+
+    def _ibinary_op(self, other, op) -> "Audio":
+        if isinstance(other, Audio):
+            self._check_compatible(other)
+            op(self._samples, other._samples)
+        else:
+            op(self._samples, other)
+        return self
+
+    def __add__(self, other) -> "Audio":
+        return self._binary_op(other, lambda a, b: a + b)
+
+    def __radd__(self, other) -> "Audio":
+        return Audio(other + self._samples, sample_rate=self._sample_rate)
+
+    def __iadd__(self, other) -> "Audio":
+        def _iadd(a, b):
+            a += b
+
+        return self._ibinary_op(other, _iadd)
+
+    def __sub__(self, other) -> "Audio":
+        return self._binary_op(other, lambda a, b: a - b)
+
+    def __rsub__(self, other) -> "Audio":
+        return Audio(other - self._samples, sample_rate=self._sample_rate)
+
+    def __isub__(self, other) -> "Audio":
+        def _isub(a, b):
+            a -= b
+
+        return self._ibinary_op(other, _isub)
+
+    def __mul__(self, other) -> "Audio":
+        return self._binary_op(other, lambda a, b: a * b)
+
+    def __rmul__(self, other) -> "Audio":
+        return Audio(other * self._samples, sample_rate=self._sample_rate)
+
+    def __imul__(self, other) -> "Audio":
+        def _imul(a, b):
+            a *= b
+
+        return self._ibinary_op(other, _imul)
+
+    def __truediv__(self, other) -> "Audio":
+        return self._binary_op(other, lambda a, b: a / b)
+
+    def __itruediv__(self, other) -> "Audio":
+        def _idiv(a, b):
+            a /= b
+
+        return self._ibinary_op(other, _idiv)
+
+    def __neg__(self) -> "Audio":
+        return Audio(-self._samples, sample_rate=self._sample_rate)
+
+    def __repr__(self) -> str:
+        return (
+            f"Audio(num_samples={self.num_samples}, "
+            f"num_channels={self.num_channels}, "
+            f"sample_rate={self._sample_rate})"
+        )

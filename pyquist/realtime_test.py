@@ -5,7 +5,7 @@ from typing import List
 
 import numpy as np
 
-from .audio import Audio, AudioBuffer
+from .audio import Audio
 from .realtime import AudioProcessor, BlockMessage, Message, iter_process, process
 
 
@@ -13,9 +13,9 @@ class SineAudioProcessor(AudioProcessor):
     def __init__(self):
         super().__init__(num_input_channels=1, num_output_channels=1)
 
-    def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def process_block(self, buffer: Audio, messages: List[BlockMessage]):
         del messages  # Unused
-        np.sin(buffer, out=buffer)
+        np.sin(buffer.samples, out=buffer.samples)
 
 
 class MessageAudioProcessor(AudioProcessor):
@@ -23,16 +23,16 @@ class MessageAudioProcessor(AudioProcessor):
         super().__init__(num_input_channels=0, num_output_channels=1)
         self.current_value = 0.0
 
-    def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def process_block(self, buffer: Audio, messages: List[BlockMessage]):
         messages = messages[:]
-        for i in range(buffer.shape[0]):
+        for i in range(buffer.num_samples):
             while messages and messages[0].offset == i:
                 new_value = messages[0].data
                 if not isinstance(new_value, float):
                     raise TypeError("Expected float message data")
                 self.current_value = new_value
                 messages.pop(0)
-            buffer[i] = self.current_value
+            buffer.samples[i] = self.current_value
 
 
 class TestAudioProcessing(unittest.TestCase):
@@ -75,14 +75,12 @@ class TestAudioProcessing(unittest.TestCase):
                 # Create input: a phasor that increases linearly in time:
                 # phase(t) = 2π * f * t
                 num_samples = int(sample_rate * duration)
-                input_audio = Audio(
-                    num_channels=1, num_samples=num_samples, sample_rate=sample_rate
-                )
+                input_audio = Audio.zeros(num_samples, 1, sample_rate=sample_rate)
                 t = np.arange(num_samples) / sample_rate
                 phase = (2 * np.pi * freq * t).astype(np.float32)
                 expected = np.sin(phase)
                 if num_samples > 0:
-                    input_audio[:, 0] = phase
+                    input_audio.samples[:, 0] = phase
 
                 for block_size in [1, 256, 512, 1024]:
 
@@ -107,7 +105,7 @@ class TestAudioProcessing(unittest.TestCase):
                             )
                             self.assertTrue(
                                 np.array_equal(
-                                    block[: expected_block.size, 0],
+                                    block.samples[: expected_block.size, 0],
                                     expected_block,
                                 )
                             )
@@ -131,7 +129,7 @@ class TestAudioProcessing(unittest.TestCase):
                     self.assertEqual(audio.num_channels, 1)
                     self.assertEqual(audio.num_samples, num_samples)
                     self.assertEqual(audio.sample_rate, sample_rate)
-                    self.assertTrue(np.array_equal(audio[:, 0], expected))
+                    self.assertTrue(np.array_equal(audio.samples[:, 0], expected))
 
     def test_process_messages(self):
         processor = MessageAudioProcessor()
@@ -169,7 +167,7 @@ class TestAudioProcessing(unittest.TestCase):
                 sample_rate=sample_rate,
             ):
                 self.assertTrue(len(block_msgs) in (0, 1, 2))
-                blocks.append(block[:, 0].copy())
+                blocks.append(block.samples[:, 0].copy())
 
             # Concatenate processed blocks up to num_samples
             output = np.concatenate(blocks)[:num_samples]
@@ -186,7 +184,7 @@ class TestAudioProcessing(unittest.TestCase):
             self.assertEqual(audio.num_channels, 1)
             self.assertEqual(audio.num_samples, num_samples)
             self.assertEqual(audio.sample_rate, sample_rate)
-            self.assertTrue(np.array_equal(audio[:, 0], expected_output))
+            self.assertTrue(np.array_equal(audio.samples[:, 0], expected_output))
 
 
 if __name__ == "__main__":

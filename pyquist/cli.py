@@ -98,7 +98,7 @@ def play(audio: Audio, *, safe: bool = True, normalize: bool = False):
     audio = audio.clip(in_place=False)
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
-    sd.play(audio, audio.sample_rate)
+    sd.play(audio.samples, audio.sample_rate)
     sd.wait()
 
 
@@ -136,7 +136,7 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs) -> Audio:
     # Wait until stream is finished
     sd.wait()
 
-    return Audio.from_array(audio, sample_rate)
+    return Audio(audio, sample_rate=sample_rate)
 
 
 if __name__ == "__main__":
