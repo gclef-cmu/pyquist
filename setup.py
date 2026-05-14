@@ -1,16 +1,5 @@
 from setuptools import setup
 
-setup(
-    name="pyquist",
-    packages=["pyquist", "pyquist.web"],
-    install_requires=[
-        "numpy~=2.0.2",
-        "resampy",
-        "soundfile",
-        "sounddevice",
-        "tqdm",
-        "requests",
-        "llvmlite>=0.43.0",
-        "tqdm",
-    ],
-)
+# Project metadata and dependencies live in pyproject.toml (PEP 621).
+# This file is kept as a shim for tools that still invoke setup.py directly.
+setup()

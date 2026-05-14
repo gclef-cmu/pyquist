@@ -1,11 +1,69 @@
-[tool.black]
-line-length = 88
-target-version = ['py310']
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
-[tool.isort]
-profile = "black"
-line_length = 88
-src_paths = ["pyquist"]
+[project]
+name = "pyquist"
+version = "0.0.0"
+description = "Barebones utilities for low-level computer music programming in Python and NumPy. Teaching library for CMU 15-322."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Chris Donahue" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+    "numpy>=2.0",
+    "requests",
+    "resampy",
+    "sounddevice",
+    "soundfile",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "ruff>=0.8",
+]
+notebook = [
+    "ipython",
+]
+
+[project.urls]
+Homepage = "https://github.com/gclef-cmu/pyquist"
+Repository = "https://github.com/gclef-cmu/pyquist"
+
+[tool.setuptools.packages.find]
+include = ["pyquist*"]
+exclude = ["examples*", "docs*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# E203: whitespace before ':' (conflicts with formatter)
+# E501: line too long (formatter handles wrapping; soft limit only)
+# E731: do not assign a lambda expression
+extend-select = ["I"]  # isort
+ignore = ["E203", "E501", "E731"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyquist"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "requests.*"

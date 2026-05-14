@@ -61,7 +61,7 @@ def _cumulative_intervals(intervals: Tuple[int, int, int, int, int, int]) -> Lis
 
 def _theorytab_note_to_pitch(note: Dict[str, Any], key: Dict[str, Any]) -> int:
     sd = note["sd"]
-    root = pitch_name_to_pitch(key["tonic"] + "0")
+    root = int(pitch_name_to_pitch(key["tonic"] + "0"))
     key_pitches = _cumulative_intervals(
         _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS[key["scale"]]
     )

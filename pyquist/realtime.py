@@ -3,7 +3,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterator, List, Optional, Tuple
 
-import numpy as np
 import sounddevice as sd
 
 from .audio import Audio

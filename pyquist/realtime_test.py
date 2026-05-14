@@ -36,7 +36,6 @@ class MessageAudioProcessor(AudioProcessor):
 
 
 class TestAudioProcessing(unittest.TestCase):
-
     def test_audio_processor(self):
         with self.assertRaises(TypeError):
             AudioProcessor()
@@ -83,7 +82,6 @@ class TestAudioProcessing(unittest.TestCase):
                     input_audio[:, 0] = phase
 
                 for block_size in [1, 256, 512, 1024]:
-
                     # Check iter_process
                     for pad_end in [False, True]:
                         # Run iter_process

@@ -228,7 +228,7 @@ class Audio:
         if peak == 0.0:
             gain = 1.0
         else:
-            gain = dbfs_to_gain(peak_dbfs) / peak
+            gain = float(dbfs_to_gain(peak_dbfs)) / peak
         if in_place:
             self._samples *= gain
             return self

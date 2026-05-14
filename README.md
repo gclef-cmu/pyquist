@@ -1,10 +1,8 @@
 # `pyquist`
 
-Python library for CMU 15-322 Intro to Computer Music. A work in progress.
+`pyquist` provides basic utilities for **low-level computer music programming in Python and NumPy**.
 
-`pyquist` provides a basic foundation for **low-level development of computer music applications in Python / NumPy**.
-
-`pyquist` is **designed for teaching**. Accordingly, it lacks a lot of functionality found in found in full-fledged computer music programming frameworks, such as a rich collection of unit generators.
+`pyquist` is **designed for learning** and is the teaching library for CMU's 15-322 Intro to Computer Music. Its primary purpose is to provide a _barebones foundation_ for working with audio in Python, e.g., allocating sample buffers, audio file decoding and playback. Accordingly, it intentionally lacks a lot of functionality found in found in full-fledged computer music programming frameworks, such as a rich collection of unit generators.
 
 ## Installation
 
