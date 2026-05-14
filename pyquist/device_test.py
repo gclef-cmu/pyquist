@@ -192,6 +192,80 @@ class TestPromptDeviceAnnotations(unittest.TestCase):
         self.assertNotIn("[default]", out)
 
 
+class TestNoDevicesAvailable(unittest.TestCase):
+    """Behavior when the machine has zero (or zero of one kind of) devices."""
+
+    def test_list_devices_empty_prints_none(self):
+        with mock.patch.object(device.sd, "query_devices", return_value=[]):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                device.list_devices()
+        out = buf.getvalue()
+        self.assertIn("Input devices:", out)
+        self.assertIn("Output devices:", out)
+        self.assertEqual(out.count("(none)"), 2)
+
+    def test_list_devices_one_kind_missing(self):
+        # Output-only world: input section should say (none).
+        output_only = [
+            {"name": "Speakers", "max_input_channels": 0, "max_output_channels": 2}
+        ]
+        with mock.patch.object(device.sd, "query_devices", return_value=output_only):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                device.list_devices()
+        out = buf.getvalue()
+        self.assertIn("Input devices:\n  (none)", out)
+        self.assertIn("0: Speakers", out)
+
+    def test_prompt_device_raises_when_no_devices(self):
+        with (
+            mock.patch.object(device.sd, "query_devices", return_value=[]),
+            mock.patch.object(device.sd, "default", _FakeSdDefault()),
+            mock.patch("sys.stdout"),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                device._prompt_device("input")
+            self.assertIn("No input devices", str(ctx.exception))
+
+    def test_prompt_device_raises_when_no_devices_of_kind(self):
+        # Output-only world → asking for input prompt should fail clearly.
+        output_only = [
+            {"name": "Speakers", "max_input_channels": 0, "max_output_channels": 2}
+        ]
+        with (
+            mock.patch.object(device.sd, "query_devices", return_value=output_only),
+            mock.patch.object(device.sd, "default", _FakeSdDefault()),
+            mock.patch("sys.stdout"),
+        ):
+            with self.assertRaises(RuntimeError):
+                device._prompt_device("input")
+
+
+class TestApplyPersistedDefaultsRobust(unittest.TestCase):
+    """``_apply_persisted_defaults`` must never let module import fail."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self.tmp.name) / "device_defaults.json"
+        p = mock.patch.object(device, "_DEFAULTS_PATH", self.tmp_path)
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_no_audio_backend_does_not_raise(self):
+        # Cached default exists, but sd.query_devices itself errors out
+        # (e.g. headless server with no audio backend).
+        self.tmp_path.write_text(json.dumps({"input": "MacBook"}))
+        with (
+            mock.patch.object(
+                device.sd, "query_devices", side_effect=OSError("no audio backend")
+            ),
+            mock.patch("sys.stderr"),
+        ):
+            device._apply_persisted_defaults()  # must not raise
+
+
 class TestPersistence(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -313,6 +387,46 @@ class TestApplyPersistedDefaults(unittest.TestCase):
             device._apply_persisted_defaults()
         # Output still applied even though input failed
         self.assertEqual(self.fake.device, (0, 1))
+
+    def test_stale_default_preserves_cache_across_sessions(self):
+        # Simulates: user persisted "External", later unplugged it.
+        self.tmp_path.write_text(
+            json.dumps({"input": "External", "output": "External"})
+        )
+        original = self.tmp_path.read_text()
+
+        # Only built-in devices remain.
+        remaining = [
+            {
+                "name": "MacBook Microphone",
+                "max_input_channels": 1,
+                "max_output_channels": 0,
+            },
+            {
+                "name": "MacBook Speakers",
+                "max_input_channels": 0,
+                "max_output_channels": 2,
+            },
+        ]
+        with (
+            mock.patch.object(device.sd, "query_devices", return_value=remaining),
+            mock.patch("sys.stderr"),
+        ):
+            device._apply_persisted_defaults()
+            # sd.default.device untouched (sounddevice's own default stands).
+            self.assertEqual(self.fake.device, (0, 0))
+            # Cache file is preserved verbatim — re-plugging the device next
+            # session should restore it.
+            self.assertEqual(self.tmp_path.read_text(), original)
+
+    def test_stale_default_warning_includes_remediation(self):
+        self.tmp_path.write_text(json.dumps({"input": "Phantom"}))
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            device._apply_persisted_defaults()
+        msg = captured.getvalue()
+        self.assertIn("Phantom", msg)
+        self.assertIn("pyquist devices", msg)
 
 
 if __name__ == "__main__":

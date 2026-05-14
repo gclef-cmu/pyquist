@@ -1,6 +1,5 @@
 from .audio import Audio
 from .device import (
-    list_devices,
     play,
     record,
     set_input_device,
@@ -13,7 +12,6 @@ __all__ = [
     "Audio",
     "AudioProcessor",
     "AudioProcessorStream",
-    "list_devices",
     "play",
     "record",
     "set_input_device",

@@ -26,17 +26,6 @@ DeviceRef = Union[int, str]
 # ---------------------------------------------------------------------------
 
 
-def list_devices() -> None:
-    """Prints all available input and output devices, grouped by kind."""
-    devices = sd.query_devices()
-    for kind in ("input", "output"):
-        print(f"{kind.capitalize()} devices:")
-        for i, dev in enumerate(devices):
-            if dev[f"max_{kind}_channels"] > 0:
-                print(f"  {i}: {dev['name']}")
-        print()
-
-
 def set_input_device(
     device_id_or_name: Optional[DeviceRef] = None,
     *,
@@ -202,6 +191,15 @@ def _prompt_device(kind: str, *, update_default: bool = False) -> Tuple[int, str
     """
     devices = sd.query_devices()
     slot = 0 if kind == "input" else 1
+
+    # Find devices that match the requested kind. Bail out cleanly if none —
+    # otherwise we'd print an empty listing and ask the user to pick anyway.
+    eligible = [
+        (i, dev) for i, dev in enumerate(devices) if dev[f"max_{kind}_channels"] > 0
+    ]
+    if not eligible:
+        raise RuntimeError(f"No {kind} devices are available on this machine.")
+
     current_id = sd.default.device[slot]
 
     # Resolve the persisted default name (if any) to its current device ID.
@@ -214,9 +212,7 @@ def _prompt_device(kind: str, *, update_default: bool = False) -> Tuple[int, str
             pass  # Cached default no longer resolvable; just don't tag it.
 
     print(f"Available {kind} devices:")
-    for i, dev in enumerate(devices):
-        if dev[f"max_{kind}_channels"] == 0:
-            continue
+    for i, dev in eligible:
         tags = []
         if i == current_id:
             tags.append("current")
@@ -259,9 +255,11 @@ def _save_defaults(defaults: dict) -> None:
 def _apply_persisted_defaults() -> None:
     """Applies cached input/output device choices to ``sd.default``.
 
-    Called once at module import. Per-key failures (e.g. a device name that
-    no longer exists) log a warning to stderr and are skipped, but they do
-    not mutate the on-disk cache.
+    Called once at module import. Any failure (cached device no longer
+    exists, audio backend uninitialized, no devices at all, ...) logs a
+    warning to stderr and is skipped — module import must never fail just
+    because audio is unavailable, since the rest of pyquist is still useful
+    on a headless machine.
     """
     defaults = _load_defaults()
     for kind, slot in [("input", 0), ("output", 1)]:
@@ -271,9 +269,11 @@ def _apply_persisted_defaults() -> None:
         try:
             device_id, _ = _resolve_device(name, kind)
             _set_device_slot(slot, device_id)
-        except (ValueError, TypeError) as e:
+        except Exception as e:
             print(
-                f"warning: could not restore {kind} device {name!r}: {e}",
+                f"warning: could not restore {kind} device {name!r}: {e} "
+                f"To pick a different default, run `pyquist devices`. "
+                f"To suppress this warning, delete {_DEFAULTS_PATH}.",
                 file=sys.stderr,
             )
 
