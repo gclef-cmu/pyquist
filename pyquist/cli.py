@@ -9,7 +9,6 @@ import argparse
 
 from .audio import Audio
 from .device import (
-    list_devices,
     play,
     record,
     set_input_device,
@@ -23,11 +22,6 @@ def _cmd_devices(args: argparse.Namespace) -> None:
     set_input_device(update_default=True)
     set_output_device(update_default=True)
     print("Saved as default for future pyquist sessions.")
-
-
-def _cmd_list_devices(args: argparse.Namespace) -> None:
-    del args
-    list_devices()
 
 
 def _cmd_play(args: argparse.Namespace) -> None:
@@ -54,9 +48,6 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="pyquist", description="Pyquist command-line interface."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    p_list = subparsers.add_parser("list-devices", help="List available audio devices.")
-    p_list.set_defaults(func=_cmd_list_devices)
 
     p_devices = subparsers.add_parser(
         "devices", help="Interactively select default input and output devices."
