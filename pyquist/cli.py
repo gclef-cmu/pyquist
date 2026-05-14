@@ -98,7 +98,7 @@ def play(audio: Audio, *, safe: bool = True, normalize: bool = False):
     audio = audio.clip(in_place=False)
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
-    sd.play(audio.samples, audio.sample_rate)
+    sd.play(audio, audio.sample_rate)
     sd.wait()
 
 

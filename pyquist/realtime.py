@@ -262,19 +262,19 @@ def iter_process(
 
         # Buffer input audio
         if input_audio is not None:
-            input_block = input_audio.samples[
+            input_block = input_audio[
                 i : i + block_i_size, : processor.num_input_channels
             ]
-            block.samples[: input_block.shape[0], : input_block.shape[1]] = input_block
+            block[: input_block.shape[0], : input_block.shape[1]] = input_block
 
         # Compute output audio
         processor(block, block_messages)
 
         # Pad end of block with zeros if needed
         if block_i_size < block_size:
-            block.samples[block_i_size:, : processor.num_output_channels] = 0.0
+            block[block_i_size:, : processor.num_output_channels] = 0.0
 
-        yield i, Audio(block.samples[:, : processor.num_output_channels]), block_messages
+        yield i, Audio(block[:, : processor.num_output_channels]), block_messages
 
 
 def process(
@@ -297,7 +297,12 @@ def process(
         sample_rate=sample_rate,
         pad_end=True,
     ):
-        end = block_offset + block.num_samples
-        out_slice = output.samples[block_offset:end, : processor.num_output_channels]
-        out_slice[:] = block.samples[: out_slice.shape[0], : processor.num_output_channels]
+        output_block = output[
+            block_offset : block_offset + block.num_samples,
+            : processor.num_output_channels,
+        ]
+        output_block[:] = block[
+            : output_block.shape[0],
+            : processor.num_output_channels,
+        ]
     return output
