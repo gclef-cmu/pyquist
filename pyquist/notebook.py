@@ -13,4 +13,8 @@ def play(audio: Audio, *, safe: bool = True, normalize: bool = False):
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
 
-    display(IPythonAudio(audio.swapaxes(0, 1), rate=audio.sample_rate, normalize=False))
+    display(
+        IPythonAudio(
+            audio.samples.swapaxes(0, 1), rate=audio.sample_rate, normalize=False
+        )
+    )

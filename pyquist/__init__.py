@@ -1,11 +1,10 @@
-from .audio import Audio, AudioBuffer
+from .audio import Audio
 from .cli import play
 from .paths import LIB_DIR
 from .realtime import AudioProcessor, AudioProcessorStream
 
 __all__ = [
     "Audio",
-    "AudioBuffer",
     "AudioProcessor",
     "AudioProcessorStream",
     "play",

@@ -5,7 +5,7 @@ from typing import List
 
 import numpy as np
 
-from .audio import Audio, AudioBuffer
+from .audio import Audio
 from .realtime import AudioProcessor, BlockMessage, Message, iter_process, process
 
 
@@ -13,9 +13,9 @@ class SineAudioProcessor(AudioProcessor):
     def __init__(self):
         super().__init__(num_input_channels=1, num_output_channels=1)
 
-    def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def process_block(self, buffer: Audio, messages: List[BlockMessage]):
         del messages  # Unused
-        np.sin(buffer, out=buffer)
+        np.sin(buffer.samples, out=buffer.samples)
 
 
 class MessageAudioProcessor(AudioProcessor):
@@ -23,7 +23,7 @@ class MessageAudioProcessor(AudioProcessor):
         super().__init__(num_input_channels=0, num_output_channels=1)
         self.current_value = 0.0
 
-    def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def process_block(self, buffer: Audio, messages: List[BlockMessage]):
         messages = messages[:]
         for i in range(buffer.shape[0]):
             while messages and messages[0].offset == i:
@@ -75,9 +75,7 @@ class TestAudioProcessing(unittest.TestCase):
                 # Create input: a phasor that increases linearly in time:
                 # phase(t) = 2π * f * t
                 num_samples = int(sample_rate * duration)
-                input_audio = Audio(
-                    num_channels=1, num_samples=num_samples, sample_rate=sample_rate
-                )
+                input_audio = Audio.zeros(num_samples, 1, sample_rate=sample_rate)
                 t = np.arange(num_samples) / sample_rate
                 phase = (2 * np.pi * freq * t).astype(np.float32)
                 expected = np.sin(phase)

@@ -3,9 +3,10 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Iterator, List, Optional, Tuple
 
+import numpy as np
 import sounddevice as sd
 
-from .audio import Audio, AudioBuffer
+from .audio import Audio
 from .helper import dbfs_to_gain
 
 
@@ -98,20 +99,21 @@ class AudioProcessor(abc.ABC):
         self._ready = False
 
     @abc.abstractmethod
-    def process_block(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def process_block(self, buffer: Audio, messages: List[BlockMessage]):
         """Override with your block processing logic.
 
-        The audio buffer will be of shape `(num_channels, block_size)`, where
+        The audio buffer will be of shape `(block_size, num_channels)`, where
         `num_channels = max(num_input_channels, num_output_channels)`. The first
         `num_input_channels` channels will contain the input audio, and the first
         `num_output_channels` channels should be written with the output audio.
 
         Args:
-            buffer: The audio buffer to process in place.
+            buffer: The audio buffer to process in place. ``buffer.sample_rate``
+                will be ``None``; use ``self.sample_rate`` if needed.
             messages: The block messages to process. Assume they are sorted by offset.
         """
 
-    def __call__(self, buffer: AudioBuffer, messages: List[BlockMessage]):
+    def __call__(self, buffer: Audio, messages: List[BlockMessage]):
         """Processes a block of audio with the given messages."""
         if not self.ready:
             raise RuntimeError("Audio processor is not ready for playback")
@@ -153,12 +155,8 @@ class AudioProcessorStream(sd.OutputStream):
     def callback(self, outdata, *args):
         del args
 
-        # Prepare AudioBuffer
-        buffer = AudioBuffer(
-            num_channels=self._processor.num_output_channels,
-            num_samples=self._block_size,
-            array=outdata,
-        )
+        # Wrap outdata as an Audio buffer (writes flow through to outdata)
+        buffer = Audio(outdata)
 
         # Dequeue all available messages
         while len(self._message_queue):
@@ -217,7 +215,7 @@ def iter_process(
     pad_end: bool = True,
     block_size: int = 512,
     sample_rate: int = 44100,
-) -> Iterator[Tuple[int, AudioBuffer, List[BlockMessage]]]:
+) -> Iterator[Tuple[int, Audio, List[BlockMessage]]]:
     """Iteratively processes audio with the given audio processor.
 
     Yields audio blocks as they are processed.
@@ -232,7 +230,8 @@ def iter_process(
         sample_rate: The sample rate to use for processing.
 
     Yields:
-        AudioBuffer: The processed audio block.
+        ``(block_offset, block, block_messages)`` for each processed block.
+        ``block`` is an ``Audio`` view over the output channels.
     """
     if messages is None:
         messages = []
@@ -241,10 +240,8 @@ def iter_process(
 
     processor.prepare(sample_rate, block_size)
     num_samples = int(duration * sample_rate)
-    block = AudioBuffer(
-        num_channels=max(processor.num_input_channels, processor.num_output_channels),
-        num_samples=block_size,
-    )
+    num_channels = max(processor.num_input_channels, processor.num_output_channels)
+    block = Audio.zeros(block_size, num_channels)
     messages = sorted(messages, key=lambda m: m.time)
 
     for i in range(0, num_samples, block_size):
@@ -277,7 +274,7 @@ def iter_process(
         if block_i_size < block_size:
             block[block_i_size:, : processor.num_output_channels] = 0.0
 
-        yield i, block[:, : processor.num_output_channels], block_messages
+        yield i, Audio(block[:, : processor.num_output_channels]), block_messages
 
 
 def process(
@@ -290,11 +287,7 @@ def process(
     sample_rate: int = 44100,
 ) -> Audio:
     num_samples = int(duration * sample_rate)
-    output = Audio(
-        num_channels=processor.num_output_channels,
-        num_samples=num_samples,
-        sample_rate=sample_rate,
-    )
+    output = Audio.zeros(num_samples, processor.num_output_channels, sample_rate)
     for block_offset, block, _ in iter_process(
         processor=processor,
         duration=duration,
@@ -305,7 +298,7 @@ def process(
         pad_end=True,
     ):
         output_block = output[
-            block_offset : block_offset + block.shape[0],
+            block_offset : block_offset + block.num_samples,
             : processor.num_output_channels,
         ]
         output_block[:] = block[
