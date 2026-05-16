@@ -252,7 +252,7 @@ def theorytab_json_to_score(
         beat = note["beat"] - 1.0
         duration = note["duration"]
         if not durations_in_beats:
-            duration = met.beat_to_time(duration)
+            duration = met.tick_to_seconds(duration)
         pitch = _theorytab_note_to_pitch(note, key) + melody_octave * 12
         melody.append(SoundEvent(beat, {"duration": duration, "pitch": pitch}))
     melody = sorted(melody, key=lambda x: x[0])
@@ -265,7 +265,7 @@ def theorytab_json_to_score(
         beat = chord["beat"] - 1.0
         duration = chord["duration"]
         if not durations_in_beats:
-            duration = met.beat_to_time(duration)
+            duration = met.tick_to_seconds(duration)
         if harmony_type == HarmonyType.SYMBOL:
             symbol = _theorytab_chord_to_symbol(chord, key)
             harmony.append(SoundEvent(beat, {"duration": duration, "symbol": symbol}))
@@ -278,7 +278,7 @@ def theorytab_json_to_score(
             raise NotImplementedError()
     harmony = sorted(harmony, key=lambda x: x[0])
 
-    return met, melody, harmony
+    return met, Score(melody), Score(harmony)
 
 
 def fetch(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
@@ -302,7 +302,6 @@ if __name__ == "__main__":
     from ..audio import Audio
     from ..device import play
     from ..helper import db_to_amplitude, pitch_to_frequency
-    from ..score import render_score
 
     # Get ID from command line
     if len(sys.argv) != 2:
@@ -321,21 +320,21 @@ if __name__ == "__main__":
         # TODO(chrisdonahue): Add envelope
         return Audio(result, sample_rate=sample_rate)
 
-    def _melody(*args, **kwargs):
-        return _osc(*args, **kwargs, dbfs=-12)
+    def _melody(event):
+        return _osc(**event.kwargs, dbfs=-12)
 
-    def _harmony(*args, **kwargs):
-        return _osc(*args, **kwargs, dbfs=-18)
+    def _harmony(event):
+        return _osc(**event.kwargs, dbfs=-18)
 
-    from ..score import bind_instrument
-
-    # Grab score
+    # Grab score and render each part with its own instrument, then mix.
     metronome, melody, harmony = fetch(sys.argv[1])
-
-    # Bind instruments to each part and concatenate into one playable score.
-    playable_score = bind_instrument(melody, _melody) + bind_instrument(
-        harmony, _harmony
+    melody_audio = melody.render(_melody, metronome=metronome)
+    harmony_audio = harmony.render(_harmony, metronome=metronome)
+    mixed = Audio.zeros(
+        max(melody_audio.num_samples, harmony_audio.num_samples),
+        1,
+        sample_rate=melody_audio.sample_rate,
     )
-
-    # Play audio
-    play(render_score(playable_score, metronome), normalize=True)
+    mixed[: melody_audio.num_samples, :] += melody_audio
+    mixed[: harmony_audio.num_samples, :] += harmony_audio
+    play(mixed, normalize=True)

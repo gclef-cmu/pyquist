@@ -8,11 +8,23 @@ from .device import (
 from .paths import LIB_DIR
 from .plot import plot, plot_freq, plot_spec
 from .realtime import AudioProcessor, AudioProcessorStream
+from .score import (
+    BasicMetronome,
+    Metronome,
+    MIDIMetronome,
+    Score,
+    SoundEvent,
+)
 
 __all__ = [
     "Audio",
     "AudioProcessor",
     "AudioProcessorStream",
+    "BasicMetronome",
+    "MIDIMetronome",
+    "Metronome",
+    "Score",
+    "SoundEvent",
     "play",
     "plot",
     "plot_freq",

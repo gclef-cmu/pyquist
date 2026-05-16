@@ -21,6 +21,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio",
 ]
 dependencies = [
+    "mido",
     "numpy>=2.0",
     "requests",
     "resampy",
