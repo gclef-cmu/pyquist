@@ -1,24 +1,33 @@
-.. Pyquist documentation master file, created by
-   sphinx-quickstart on Fri Dec 13 13:41:36 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Pyquist documentation
 =====================
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
+``pyquist`` provides basic utilities for **low-level computer music programming
+in Python and NumPy**. It is designed for learning and is the teaching library
+for CMU's 15-322 *Intro to Computer Music*.
 
+This site is the auto-generated API reference. For a hands-on tour, see the
+`HelloPyquist notebook
+<https://github.com/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_
+in the repository.
+
+
+API reference
+-------------
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
-      source/modules
+   api/audio
+   api/score
+   api/plot
+   api/device
+   api/helper
+   api/realtime
+   api/web
+
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`
