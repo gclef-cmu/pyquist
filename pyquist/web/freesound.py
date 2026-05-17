@@ -1,204 +1,288 @@
+"""FreeSound API client.
+
+Most users only need :func:`fetch_freesound`, which downloads a sound by URL
+or numeric ID and returns it as an :class:`pyquist.Audio`. Previews download
+without authentication; fetching the original uncompressed file requires the
+FreeSound OAuth2 flow (walked through interactively on first use).
+
+Credentials and downloaded files are cached under ``CACHE_DIR / "freesound"``.
+"""
+
 import json
 import pathlib
 import re
 from io import BytesIO
-from typing import Tuple
+from typing import Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import requests
 
 from ..audio import Audio
-from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
+from ..paths import CACHE_DIR
 
-_CACHE_DIR = _ROOT_CACHE_DIR / "freesound"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_CACHE_DIR = CACHE_DIR / "freesound"
+_API_KEY_PATH = _CACHE_DIR / "api_key.json"
+_OAUTH_TOKEN_PATH = _CACHE_DIR / "oauthv2_token.json"
+
+_API_BASE = "https://freesound.org/apiv2"
+_OAUTH_AUTHORIZE_URL = f"{_API_BASE}/oauth2/authorize/"
+_OAUTH_TOKEN_URL = f"{_API_BASE}/oauth2/access_token/"
+
+# Matches paths like "/sounds/123456" or "/people/<user>/sounds/123456" with
+# an optional trailing slash. Captures the numeric ID.
+_URL_PATH_PATTERN = re.compile(r"^/(?:people/[^/]+/)?sounds/(\d+)/?$")
+
+_VALID_PREVIEW_TAGS = (
+    "preview-hq-mp3",
+    "preview-hq-ogg",
+    "preview-lq-mp3",
+    "preview-lq-ogg",
+)
 
 
-def _get_client_credentials(reauthenticate: bool) -> Tuple[str, str]:
-    # Load API from cache or prompt user
-    api_key_path = _CACHE_DIR / "api_key.json"
-    if not api_key_path.exists() or reauthenticate:
-        print("Please go to the following URL and create or retrieve API credentials:")
-        print("https://freesound.org/apiv2/apply")
-        client_id = input("Create and enter FreeSound client ID from: ")
-        client_secret = input("Enter FreeSound client secret: ")
-        with open(api_key_path, "w") as f:
-            json.dump({"client_id": client_id, "client_secret": client_secret}, f)
-    else:
-        with open(api_key_path, "r") as f:
-            d = json.load(f)
-            client_secret = d["client_secret"].strip()
-            client_id = d["client_id"].strip()
+# ---------------------------------------------------------------------------
+# URL / ID parsing
+# ---------------------------------------------------------------------------
 
+
+def url_to_id(id_or_url: Union[int, str]) -> int:
+    """Parses a FreeSound URL or numeric ID into an integer sound ID.
+
+    Accepted forms:
+
+    * ``123456`` — raw int
+    * ``"123456"`` — numeric string
+    * ``"https://freesound.org/sounds/123456/"``
+    * ``"https://freesound.org/people/<user>/sounds/123456/"``
+    * ``http://`` and ``www.`` variants of the above
+
+    Raises ``ValueError`` if the input isn't a recognized FreeSound URL or
+    a numeric ID.
+    """
+    if isinstance(id_or_url, int):
+        return id_or_url
+    s = id_or_url.strip()
+    if s.isdigit():
+        return int(s)
+    parsed = urlparse(s)
+    host = parsed.netloc.lower().removeprefix("www.")
+    if host != "freesound.org":
+        raise ValueError(f"Not a FreeSound URL or numeric ID: {id_or_url!r}.")
+    match = _URL_PATH_PATTERN.match(parsed.path)
+    if not match:
+        raise ValueError(f"Could not extract sound ID from URL: {id_or_url!r}.")
+    return int(match.group(1))
+
+
+# ---------------------------------------------------------------------------
+# Credential storage
+# ---------------------------------------------------------------------------
+
+
+def _load_json(path: pathlib.Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _save_json(path: pathlib.Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f)
+
+
+def _credentials(*, reauthenticate: bool = False) -> Tuple[str, str]:
+    """Returns ``(client_id, client_secret)`` — cached or prompted.
+
+    On first use (or when ``reauthenticate=True``) walks the user through
+    creating a FreeSound API key.
+    """
+    if not reauthenticate:
+        cached = _load_json(_API_KEY_PATH)
+        if cached:
+            return cached["client_id"].strip(), cached["client_secret"].strip()
+
+    print("FreeSound API credentials required.")
+    print("Create an API key at https://freesound.org/apiv2/apply")
+    client_id = input("Client ID: ").strip()
+    client_secret = input("Client secret: ").strip()
+    _save_json(_API_KEY_PATH, {"client_id": client_id, "client_secret": client_secret})
     return client_id, client_secret
 
 
-def _get_oauthv2_token(reauthenticate: bool) -> str:
-    token_path = _CACHE_DIR / "oauthv2_token.json"
-    if not token_path.exists() or reauthenticate:
-        client_id, client_secret = _get_client_credentials(reauthenticate)
+def _oauth_token(*, reauthenticate: bool = False) -> str:
+    """Returns a FreeSound OAuth2 access token — cached or freshly obtained.
 
-        # Prompt user to authorize their application in their browser
-        authorization_url = "https://freesound.org/apiv2/oauth2/authorize/"
-        auth_url = f"{authorization_url}?client_id={client_id}&response_type=code"
-        print("Please go to the following URL to authorize the app:")
-        print(auth_url)
-        authorization_code = input("Enter the authorization code: ")
+    Only needed for downloading the original (uncompressed) sound files;
+    fetching previews uses the API key alone.
 
-        # Exchange authorization code for an access token
-        data = {
+    .. note::
+        Refresh-token handling is not implemented. If the cached token
+        expires, the user can pass ``reauthenticate=True`` to re-run the
+        flow.
+    """
+    if not reauthenticate:
+        cached = _load_json(_OAUTH_TOKEN_PATH)
+        if cached and "access_token" in cached:
+            return cached["access_token"]
+
+    client_id, client_secret = _credentials(reauthenticate=reauthenticate)
+    print("To authorize this app, visit:")
+    print(f"  {_OAUTH_AUTHORIZE_URL}?client_id={client_id}&response_type=code")
+    code = input("Authorization code: ").strip()
+
+    response = requests.post(
+        _OAUTH_TOKEN_URL,
+        data={
             "client_id": client_id,
             "client_secret": client_secret,
             "grant_type": "authorization_code",
-            "code": authorization_code,
-        }
-        token_url = "https://freesound.org/apiv2/oauth2/access_token/"
-        response = requests.post(token_url, data=data)
-        if response.status_code != 200:
-            raise Exception(
-                f"Error retrieving access token: {response.status_code} - {response.text}"
-            )
-        token_data = response.json()
-        if "access_token" not in token_data:
-            raise Exception(f"Error retrieving access token: {token_data}")
-        token_data["client_id"] = client_id
-        token_data["client_secret"] = client_secret
-
-        # Store token for future use
-        with open(token_path, "w") as f:
-            json.dump(token_data, f)
-    else:
-        with open(token_path, "r") as f:
-            token_data = json.load(f)
-        # TODO: implement refresh logic
+            "code": code,
+        },
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"OAuth token request failed: {response.status_code} - {response.text}"
+        )
+    token_data = response.json()
+    if "access_token" not in token_data:
+        raise RuntimeError(f"OAuth response missing access_token: {token_data}")
+    # Stash credentials alongside the token for future refresh logic.
+    token_data["client_id"] = client_id
+    token_data["client_secret"] = client_secret
+    _save_json(_OAUTH_TOKEN_PATH, token_data)
     return token_data["access_token"]
 
 
-def fetch_metadata(
-    sound_id: int,
-    *,
-    reauthenticate: bool = False,
-    cache_dir: pathlib.Path = _CACHE_DIR,
-) -> dict:
-    path = cache_dir / str(sound_id) / "metadata.json"
-    if path.exists():
-        with open(path, "r") as f:
-            return json.load(f)
-    _, client_secret = _get_client_credentials(reauthenticate)
-    metadata_url = f"https://freesound.org/apiv2/sounds/{sound_id}"
-    response = requests.get(metadata_url, params={"token": client_secret})
+# ---------------------------------------------------------------------------
+# API calls
+# ---------------------------------------------------------------------------
+
+
+def fetch_metadata(sound_id: int, *, reauthenticate: bool = False) -> dict:
+    """Fetches the FreeSound JSON metadata for a sound (cached on disk)."""
+    cache_path = _CACHE_DIR / str(sound_id) / "metadata.json"
+    cached = _load_json(cache_path)
+    if cached is not None:
+        return cached
+
+    # The FreeSound API accepts the API key as a query-string ``token``.
+    _, api_key = _credentials(reauthenticate=reauthenticate)
+    response = requests.get(f"{_API_BASE}/sounds/{sound_id}", params={"token": api_key})
     if response.status_code == 404:
-        raise ValueError(f"Sound {sound_id} not found.")
-    elif response.status_code != 200:
-        raise Exception(
-            f"Error retrieving sound info: {response.status_code} - {response.text}"
+        raise ValueError(f"FreeSound sound {sound_id} not found.")
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"FreeSound metadata request failed for sound {sound_id}: "
+            f"{response.status_code} - {response.text}"
         )
-    result = response.json()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(result, f)
-    return result
+    metadata = response.json()
+    _save_json(cache_path, metadata)
+    return metadata
 
 
-# TODO: Cache downloaded files
-def fetch_audio(
+def fetch_audio_bytes(
     sound_id: int,
     *,
-    preview_okay: bool = True,
-    preview_tag: str = "preview-hq-ogg",
+    preview_tag: Optional[str] = "preview-hq-ogg",
     reauthenticate: bool = False,
-    cache_dir: pathlib.Path = _CACHE_DIR,
-) -> Tuple[BytesIO, dict]:
-    # Get metadata
+) -> Tuple[bytes, dict]:
+    """Downloads the raw audio bytes for a sound, plus its metadata.
+
+    Args:
+        sound_id: FreeSound numeric ID.
+        preview_tag: Which preview to download. One of ``"preview-hq-ogg"``
+            (default), ``"preview-hq-mp3"``, ``"preview-lq-ogg"``, or
+            ``"preview-lq-mp3"``. Pass ``None`` to download the original
+            uncompressed file instead — this requires OAuth2 and triggers an
+            interactive auth flow on first use.
+        reauthenticate: Force a re-prompt of API credentials.
+
+    Returns ``(audio_bytes, metadata)``. Both are cached on disk so repeated
+    calls for the same sound are free.
+    """
     metadata = fetch_metadata(sound_id, reauthenticate=reauthenticate)
 
-    # Set up audio request
-    if preview_okay:
-        if preview_tag not in metadata["previews"]:
+    if preview_tag is not None:
+        if preview_tag not in _VALID_PREVIEW_TAGS:
             raise ValueError(
-                f"'{preview_tag}' not found among {list(metadata['previews'].keys())}."
+                f"Invalid preview_tag {preview_tag!r}; "
+                f"must be one of {list(_VALID_PREVIEW_TAGS)} or None."
             )
-        if not (preview_tag.endswith("-ogg") or preview_tag.endswith("-mp3")):
-            raise ValueError("Preview tag must end with '-ogg' or '-mp3'.")
-        path = cache_dir / str(sound_id) / (preview_tag[:-4] + "." + preview_tag[-3:])
         url = metadata["previews"][preview_tag]
+        # preview_tag has the form "preview-hq-ogg"; the last 3 chars are the extension.
+        cache_path = (
+            _CACHE_DIR / str(sound_id) / f"{preview_tag[:-4]}.{preview_tag[-3:]}"
+        )
         headers = None
     else:
-        path = cache_dir / str(sound_id) / f"original.{metadata['type']}"
-        url = f"https://freesound.org/apiv2/sounds/{sound_id}/download/"
-        access_token = _get_oauthv2_token(reauthenticate=reauthenticate)
-        headers = {"Authorization": f"Bearer {access_token}"}
+        url = f"{_API_BASE}/sounds/{sound_id}/download/"
+        cache_path = _CACHE_DIR / str(sound_id) / f"original.{metadata['type']}"
+        token = _oauth_token(reauthenticate=reauthenticate)
+        headers = {"Authorization": f"Bearer {token}"}
 
-    # Fetch audio
-    if path.exists():
-        with open(path, "rb") as f:
-            audio_bytes = f.read()
-    else:
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            raise Exception(
-                f"Error retrieving sound file: {response.status_code} - {response.text}"
-            )
-        audio_bytes = response.content
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as f:
-            f.write(audio_bytes)
+    if cache_path.exists():
+        return cache_path.read_bytes(), metadata
 
-    return BytesIO(audio_bytes), metadata
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"FreeSound download failed for sound {sound_id}: "
+            f"{response.status_code} - {response.text}"
+        )
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(response.content)
+    return response.content, metadata
 
 
-def url_to_id(id_or_url: str) -> int:
-    url = urlparse(id_or_url)
-    if url.netloc == "freesound.org":
-        # Check if ends in sounds/<id>
-        match = re.match(r".*/sounds/(\d+)", url.path)
-        if not match:
-            raise ValueError("Invalid FreeSound URL.")
-        sound_id = int(match.group(1))
-    else:
-        # Assume it's an ID
-        try:
-            sound_id = int(id_or_url)
-        except ValueError:
-            raise ValueError("Invalid FreeSound URL or ID.")
-    return sound_id
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 
-def fetch(
-    id_or_url: int | str,
+def fetch_freesound(
+    id_or_url: Union[int, str],
     *,
-    preview_okay: bool = True,
-    preview_tag: str = "preview-hq-ogg",
+    preview_tag: Optional[str] = "preview-hq-ogg",
     reauthenticate: bool = False,
-    cache_dir: pathlib.Path = _CACHE_DIR,
 ) -> Tuple[Audio, dict]:
-    # Parse URL
-    # https://freesound.org/people/looplicator/sounds/759259/ -> 759259
-    if isinstance(id_or_url, str):
-        sound_id = url_to_id(id_or_url)
-    else:
-        sound_id = id_or_url
+    """Fetches an ``Audio`` (and metadata) from FreeSound by URL or numeric ID.
 
-    audio_bytes, metadata = fetch_audio(
-        sound_id,
-        preview_okay=preview_okay,
-        preview_tag=preview_tag,
-        reauthenticate=reauthenticate,
-        cache_dir=cache_dir,
+    Example::
+
+        from pyquist.web import fetch_freesound
+        audio, meta = fetch_freesound(
+            "https://freesound.org/people/cdonahueucsd/sounds/337131/"
+        )
+
+    Args:
+        id_or_url: A FreeSound URL or numeric sound ID. See :func:`url_to_id`
+            for the recognized URL forms.
+        preview_tag: Which preview to fetch (default high-quality OGG). Pass
+            ``None`` to fetch the original uncompressed file (OAuth2 required).
+        reauthenticate: Force a re-prompt of API credentials.
+
+    Returns:
+        ``(audio, metadata)`` — ``audio`` is decoded via
+        :meth:`pyquist.Audio.from_file` and ``metadata`` is the raw JSON dict
+        returned by the FreeSound API.
+    """
+    sound_id = url_to_id(id_or_url)
+    audio_bytes, metadata = fetch_audio_bytes(
+        sound_id, preview_tag=preview_tag, reauthenticate=reauthenticate
     )
-    return Audio.from_file(audio_bytes), metadata
-
-
-# Alias for backwards compatibility
-def fetch_from_freesound(*args, **kwargs) -> Audio:
-    return fetch(*args, **kwargs)[0]
+    return Audio.from_file(BytesIO(audio_bytes)), metadata
 
 
 if __name__ == "__main__":
     import sys
 
-    from ..cli import play
+    from ..device import play
 
-    audio, metadata = fetch(sys.argv[1], preview_okay=True)
+    audio, metadata = fetch_freesound(sys.argv[1])
     print(json.dumps(metadata, indent=2))
     play(audio)

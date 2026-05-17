@@ -1,13 +1,32 @@
 from .audio import Audio
-from .cli import play
+from .device import (
+    play,
+    record,
+    set_input_device,
+    set_output_device,
+)
 from .paths import LIB_DIR
-from .realtime import AudioProcessor, AudioProcessorStream
+from .plot import plot, plot_freq, plot_spec
+from .score import (
+    BasicMetronome,
+    Metronome,
+    Score,
+    SoundEvent,
+)
 
 __all__ = [
     "Audio",
-    "AudioProcessor",
-    "AudioProcessorStream",
+    "BasicMetronome",
+    "Metronome",
+    "Score",
+    "SoundEvent",
     "play",
+    "plot",
+    "plot_freq",
+    "plot_spec",
+    "record",
+    "set_input_device",
+    "set_output_device",
 ]
 
 

@@ -1,4 +1,17 @@
-import enum
+"""TheoryTab API client.
+
+`TheoryTab <https://www.hooktheory.com/theorytab>`_ is a community database of
+pop-song melody and chord progressions hosted by Hooktheory. This module
+fetches a song by URL or 11-character ID and turns it into pyquist
+:class:`pyquist.Score` objects ready for rendering.
+
+Most users only need :func:`fetch`, which combines :func:`fetch_theorytab_json`
+(network + caching) with :func:`theorytab_json_to_score` (parsing).
+
+Downloaded JSON is cached under ``CACHE_DIR / "theorytab"`` so repeat lookups
+are free.
+"""
+
 import json
 from typing import Any, Dict, List, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -8,11 +21,17 @@ import requests
 
 from ..helper import pitch_name_to_pitch
 from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
-from ..score import BasicMetronome, Metronome, Score
+from ..score import BasicMetronome, Metronome, Score, SoundEvent
 
 _CACHE_DIR = _ROOT_CACHE_DIR / "theorytab"
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# TheoryTab song identifiers (``idOfSong`` in Hookpad URLs) are 11 characters.
+_THEORYTAB_ID_LENGTH = 11
+
+_HOOKTHEORY_API_URL = "https://api.hooktheory.com/v1/songs/public"
+
+# Diatonic scales as ordered (whole-/half-) step intervals between successive
+# notes. Each tuple has 6 entries (7 notes → 6 gaps).
 _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
     "major": (2, 2, 1, 2, 2, 2),
     "dorian": (2, 1, 2, 2, 2, 1),
@@ -25,57 +44,45 @@ _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
     "phrygianDominant": (1, 3, 1, 2, 1, 2),
 }
 
-_CHORD_DEGREES_TO_LILY_NAME = {
-    (4, 3): "",  # Major
-    (3, 4): "m",  # Minor
-    (3, 4, 3): "m7",  # Minor 7
-    (4, 3, 3): "7",  # 7
-    (4, 3, 4): "maj7",  # Major 7
-    (5, 2): "sus4",  # Sus 4
-    (4, 3, 7): "9^7",  # Add 9
-    (3, 3): "dim",  # Dim
-    (3, 3, 4): "m7.5-",  # Dim minor 7
-    (2, 5): "sus2",  # Sus 2
-    (5, 2, 3): "7sus4",  # 7 Sus 4
-    (3, 4, 3, 4): "m9",  # Minor 9
-    (4, 3, 4, 3): "maj9",  # Major 9
-    (2, 5, 3): "7sus2",  # 7 Sus 2
-    (3, 4, 7): "m9^7",  # Minor Add 9
-    (3, 3, 3): "dim7",  # Dim 7
-    (2, 5, 4): "maj7sus2",  # Major 7 Sus 2
-    (4, 3, 3, 4): "9",  # 9
-    (2, 3, 2): "11.9^7",  # Sus 2 Sus 4
-    (4, 4): "aug",  # Aug
-}
 
-
-class HarmonyType(enum.Enum):
-    SYMBOL = 0
-    ROOT_POSITION_NOTES = 1
+# ---------------------------------------------------------------------------
+# Music-theory helpers
+# ---------------------------------------------------------------------------
 
 
 def _cumulative_intervals(intervals: Tuple[int, int, int, int, int, int]) -> List[int]:
+    """Converts inter-note steps to cumulative semitones from the tonic.
+
+    e.g. major ``(2, 2, 1, 2, 2, 2)`` → ``[0, 2, 4, 5, 7, 9, 11]``.
+    """
     assert len(intervals) == 6
     return [0] + np.cumsum(intervals).tolist()
 
 
 def _theorytab_note_to_pitch(note: Dict[str, Any], key: Dict[str, Any]) -> int:
-    sd = note["sd"]
-    root = pitch_name_to_pitch(key["tonic"] + "0")
+    """Converts a TheoryTab JSON melody note into an absolute MIDI pitch.
+
+    TheoryTab notates pitches as ``<accidentals><scale-degree>`` (e.g. ``"#5"``,
+    ``"b3"``, ``"5"``) plus an ``octave`` integer. The scale degree is
+    interpreted in the song's current scale; accidentals shift by ±1 semitone.
+    """
+    sd_str = note["sd"]
+    *accidentals, degree_char = sd_str
+    degree = int(degree_char)
+
     key_pitches = _cumulative_intervals(
         _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS[key["scale"]]
     )
-    pitch = key_pitches[int(sd[-1:]) - 1]
-    sd = sd[:-1]
-    while len(sd) > 0:
-        if sd[0] == "#":
+    pitch = key_pitches[degree - 1]
+    for c in accidentals:
+        if c == "#":
             pitch += 1
-        elif sd[0] == "b":
+        elif c == "b":
             pitch -= 1
         else:
-            raise ValueError(f"Invalid scale degree: {note['sd']}")
-        sd = sd[1:]
-    pitch += root
+            raise ValueError(f"Invalid scale degree {sd_str!r}: unexpected {c!r}.")
+
+    pitch += int(pitch_name_to_pitch(key["tonic"] + "0"))
     pitch += note["octave"] * 12
     return pitch
 
@@ -83,6 +90,12 @@ def _theorytab_note_to_pitch(note: Dict[str, Any], key: Dict[str, Any]) -> int:
 def _theorytab_chord_to_pitches(
     chord: Dict[str, Any], key: Dict[str, Any]
 ) -> List[int]:
+    """Converts a TheoryTab JSON chord into a list of absolute MIDI pitches.
+
+    Handles type (triad / 7 / 9 / ...), suspensions, additions, omissions,
+    alterations, borrowed scales, and secondary dominants. Returns the chord
+    in root position (no inversions).
+    """
     # Build chord scale degrees
     chord_degrees = set(range(1, chord["type"] + 1, 2))
 
@@ -111,8 +124,7 @@ def _theorytab_chord_to_pitches(
         d = int(d[1:])
         chord_degrees.add(d)
 
-    # Convert to list
-    chord_degrees_list = sorted(list(chord_degrees))
+    chord_degrees_list = sorted(chord_degrees)
 
     # Find scale intervals
     key_tonic_pc = pitch_name_to_pitch(key["tonic"] + "0")
@@ -155,69 +167,124 @@ def _theorytab_chord_to_pitches(
         assert d in chord_degree_to_interval
         chord_degree_to_interval[d] += -1 if alt[0] == "b" else 1
 
-    # Create final chord
     return [key_tonic_pc + v for _, v in chord_degree_to_interval.items()]
 
 
-def _theorytab_chord_to_symbol(chord: Dict[str, Any], key: Dict[str, Any]) -> str:
-    # Goal is to convert theorytab JSON chord / key to something like "Cmaj7"
-    # See _CHORD_DEGREES_TO_LILY_NAME above
-    raise NotImplementedError("Left as exercise to intrepid student.")
+# ---------------------------------------------------------------------------
+# URL / ID parsing
+# ---------------------------------------------------------------------------
 
 
-def fetch_theorytab_json(id_or_url: str, *, ignore_cache=False) -> dict:
-    # Parse TheoryTab ID from input
-    id_or_url = id_or_url.strip()
-    if len(id_or_url) == 11:
-        theorytab_id = id_or_url
-    else:
-        url = urlparse(id_or_url)
-        if "hooktheory.com" not in url.netloc:
-            raise ValueError("Invalid TheoryTab URL.")
-        query_params = parse_qs(url.query)
-        theorytab_ids = query_params.get("idOfSong")
-        if theorytab_ids is None:
-            raise ValueError("Invalid TheoryTab URL.")
-        theorytab_id = theorytab_ids[0]
-    assert len(theorytab_id) == 11
+def _extract_theorytab_id(id_or_url: str) -> str:
+    """Returns the 11-character TheoryTab song ID for ``id_or_url``.
+
+    Accepts either a bare ID or a Hookpad/Hooktheory URL containing an
+    ``idOfSong=...`` query parameter (e.g.
+    ``https://hookpad.hooktheory.com/?idOfSong=RPxeJeJaob_``).
+    Raises ``ValueError`` if neither form is recognized.
+    """
+    s = id_or_url.strip()
+    if len(s) == _THEORYTAB_ID_LENGTH:
+        return s
+    url = urlparse(s)
+    if "hooktheory.com" not in url.netloc:
+        raise ValueError(f"Not a TheoryTab URL or ID: {id_or_url!r}.")
+    ids = parse_qs(url.query).get("idOfSong")
+    if not ids:
+        raise ValueError(
+            f"TheoryTab URL is missing 'idOfSong' query parameter: {id_or_url!r}."
+        )
+    return ids[0]
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def fetch_theorytab_json(id_or_url: str, *, ignore_cache: bool = False) -> dict:
+    """Fetches the raw TheoryTab JSON for a song, caching it on disk.
+
+    Args:
+        id_or_url: A bare 11-character TheoryTab song ID or any URL that
+            contains it as the ``idOfSong`` query parameter.
+        ignore_cache: If ``True``, re-fetch even if a cached copy exists.
+
+    Raises:
+        ValueError: if ``id_or_url`` can't be parsed.
+        RuntimeError: on a non-200 response from the Hooktheory API or
+            unexpected response shape.
+        NotImplementedError: if the song's data is in a legacy format
+            without parsed ``jsonData``.
+    """
+    theorytab_id = _extract_theorytab_id(id_or_url)
+    assert len(theorytab_id) == _THEORYTAB_ID_LENGTH
 
     cache_file = _CACHE_DIR / f"{theorytab_id}.json"
     if cache_file.exists() and not ignore_cache:
-        # Return cached data
         with open(cache_file, "r") as f:
             return json.load(f)
-    else:
-        # Call API
-        hooktheory_api_url = f"https://api.hooktheory.com/v1/songs/public/{theorytab_id}?fields=ID,song,jsonData"
-        response = requests.get(hooktheory_api_url)
-        if response.status_code != 200:
-            raise Exception(
-                f"Error retrieving TheoryTab data: {response.status_code} - {response.text}"
-            )
-        data = response.json()
-        if "jsonData" not in data:
-            raise Exception(f"Unexpected response from TheoryTab API: {data}")
-        if data["jsonData"] is None:
-            # TODO(chrisdonahue): parse legacy XML data?
-            raise NotImplementedError(
-                "This song has an unsupported format. Try a different one."
-            )
-        result = json.loads(data["jsonData"])
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w") as f:
-            json.dump(result, f)
-        return result
+
+    response = requests.get(
+        f"{_HOOKTHEORY_API_URL}/{theorytab_id}",
+        params={"fields": "ID,song,jsonData"},
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"TheoryTab API request failed for {theorytab_id}: "
+            f"{response.status_code} - {response.text}"
+        )
+    data = response.json()
+    if "jsonData" not in data:
+        raise RuntimeError(f"Unexpected response from TheoryTab API: {data}")
+    if data["jsonData"] is None:
+        # TODO(chrisdonahue): parse legacy XML data?
+        raise NotImplementedError(
+            "This song has an unsupported format. Try a different one."
+        )
+    result = json.loads(data["jsonData"])
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache_file, "w") as f:
+        json.dump(result, f)
+    return result
 
 
 def theorytab_json_to_score(
     song_data: dict,
     *,
     durations_in_beats: bool = False,
-    harmony_type: HarmonyType = HarmonyType.ROOT_POSITION_NOTES,
     melody_octave: int = 5,
     harmony_octave: int = 4,
 ) -> Tuple[Metronome, Score, Score]:
-    # Create mapping between beats and times
+    """Parses a TheoryTab JSON object into a metronome and two scores.
+
+    The ``time`` of each event is in **beats** (starting from 0). Pair it
+    with the returned :class:`BasicMetronome` when rendering so beats are
+    converted to seconds.
+
+    Chord events are emitted as one :class:`SoundEvent` per chord tone in
+    root position, each with a ``"pitch"`` kwarg — so a triad at beat 4
+    becomes three events sharing ``time == 4.0``.
+
+    Args:
+        song_data: TheoryTab JSON (as returned by :func:`fetch_theorytab_json`).
+        durations_in_beats: If ``False`` (default), each event's
+            ``kwargs["duration"]`` is converted to **seconds** via the
+            song's tempo. If ``True``, durations stay in beats and the
+            instrument is responsible for any further conversion.
+        melody_octave: Octave offset added to melody pitches.
+        harmony_octave: Octave offset added to harmony pitches.
+
+    Returns:
+        ``(metronome, melody, harmony)`` where ``metronome`` is a
+        :class:`BasicMetronome` carrying the song's tempo, and ``melody`` /
+        ``harmony`` are :class:`Score` objects.
+
+    Raises:
+        NotImplementedError: if the song's time signature / tempo / key
+            structure is more complex than this parser supports.
+    """
+    # We only support single-section songs in 3/4 or 4/4, single-tempo, single-key.
     meters = song_data["meters"]
     if (
         len(meters) != 1
@@ -233,65 +300,70 @@ def theorytab_json_to_score(
         raise NotImplementedError(
             "This song has an unsupported tempo. Try a different one."
         )
-    bpm = tempos[0]["bpm"]
-    met = BasicMetronome(bpm)
-
-    # Create mapping between scale degrees and pitches
     keys = song_data["keys"]
     if len(keys) != 1 or keys[0]["beat"] != 1:
         raise NotImplementedError(
             "This song has an unsupported key signature. Try a different one."
         )
+
+    metronome = BasicMetronome(tempos[0]["bpm"])
     key = keys[0]
 
     # Parse melody
-    melody = []
+    melody: List[SoundEvent] = []
     for note in song_data["notes"]:
         if note["isRest"]:
             continue
         beat = note["beat"] - 1.0
         duration = note["duration"]
         if not durations_in_beats:
-            duration = met.beat_to_time(duration)
+            duration = metronome.tick_to_seconds(duration)
         pitch = _theorytab_note_to_pitch(note, key) + melody_octave * 12
-        melody.append((beat, {"duration": duration, "pitch": pitch}))
-    melody = sorted(melody, key=lambda x: x[0])
+        melody.append(SoundEvent(beat, {"duration": duration, "pitch": pitch}))
+    melody.sort(key=lambda e: e.time)
 
-    # Parse chords
-    harmony = []
+    # Parse harmony (chords)
+    harmony: List[SoundEvent] = []
     for chord in song_data["chords"]:
         if chord["isRest"]:
             continue
         beat = chord["beat"] - 1.0
         duration = chord["duration"]
         if not durations_in_beats:
-            duration = met.beat_to_time(duration)
-        if harmony_type == HarmonyType.SYMBOL:
-            symbol = _theorytab_chord_to_symbol(chord, key)
-            harmony.append((beat, {"duration": duration, "symbol": symbol}))
-        elif harmony_type == HarmonyType.ROOT_POSITION_NOTES:
-            pitches = _theorytab_chord_to_pitches(chord, key)
-            pitches = [p + harmony_octave * 12 for p in pitches]
-            for pitch in pitches:
-                harmony.append((beat, {"duration": duration, "pitch": pitch}))
-        else:
-            raise NotImplementedError()
-    harmony = sorted(harmony, key=lambda x: x[0])
+            duration = metronome.tick_to_seconds(duration)
+        pitches = _theorytab_chord_to_pitches(chord, key)
+        for pitch in pitches:
+            harmony.append(
+                SoundEvent(
+                    beat,
+                    {"duration": duration, "pitch": pitch + harmony_octave * 12},
+                )
+            )
+    harmony.sort(key=lambda e: e.time)
 
-    return met, melody, harmony
+    return metronome, Score(melody), Score(harmony)
 
 
-def fetch_from_theorytab(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
-    """Fetches a pop song from TheoryTab and returns a score.
+def fetch_theorytab(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
+    """Fetches and parses a TheoryTab song in one call.
 
-    To get an `id_or_url` input:
-        1. Find a song on TheoryTab, e.g., https://www.hooktheory.com/theorytab/view/the-beatles/a-hard-days-night
-        2. Right click on "Open in Hookpad", and click "Copy Link Address."
-        3. Paste the link address into the `id_or_url` input.
+    Equivalent to ``theorytab_json_to_score(fetch_theorytab_json(id_or_url),
+    **kwargs)``.
+
+    Example::
+
+        from pyquist.web import fetch_theorytab
+        metronome, melody, harmony = fetch_theorytab(
+            "https://hookpad.hooktheory.com/?idOfSong=RPxeJeJaob_"
+        )
+
+    To get a URL: find a song on `TheoryTab
+    <https://www.hooktheory.com/theorytab>`_, right-click "Open in Hookpad",
+    and "Copy Link Address."
 
     Args:
-        id_or_url: The TheoryTab ID or URL.
-        **kwargs: Additional keyword arguments to `theorytab_json_to_score`.
+        id_or_url: A bare 11-character TheoryTab ID or a Hookpad/Hooktheory URL.
+        **kwargs: Forwarded to :func:`theorytab_json_to_score`.
     """
     return theorytab_json_to_score(fetch_theorytab_json(id_or_url), **kwargs)
 
@@ -300,40 +372,37 @@ if __name__ == "__main__":
     import sys
 
     from ..audio import Audio
-    from ..cli import play
-    from ..helper import dbfs_to_gain, pitch_to_frequency
-    from ..score import render_score
+    from ..device import play
+    from ..helper import db_to_amplitude, pitch_to_frequency
 
-    # Get ID from command line
     if len(sys.argv) != 2:
-        raise ValueError("Usage: python -m pyquist_lib.pyquist.web.theorytab <id>")
-    id_or_url = sys.argv[1]
+        raise SystemExit("Usage: python -m pyquist.web.theorytab <id-or-url>")
 
-    # Basic instrument functions
-    # TODO(chrisdonahue): add something similar to library?
     def _osc(
         duration: float, pitch: int, dbfs: float, sample_rate: int = 44100
     ) -> Audio:
+        """A tiny sine-wave instrument. TODO: add an envelope."""
         t = np.arange(int(duration * sample_rate)) / sample_rate
-        result = np.sin(2 * np.pi * t * pitch_to_frequency(pitch)) * dbfs_to_gain(dbfs)
-        # TODO(chrisdonahue): Add envelope
-        return Audio(result, sample_rate=sample_rate)
+        samples = np.sin(2 * np.pi * t * pitch_to_frequency(pitch)) * db_to_amplitude(
+            dbfs
+        )
+        return Audio(samples, sample_rate=sample_rate)
 
-    def _melody(*args, **kwargs):
-        return _osc(*args, **kwargs, dbfs=-12)
+    def _melody(event):
+        return _osc(**event.kwargs, dbfs=-12)
 
-    def _harmony(*args, **kwargs):
-        return _osc(*args, **kwargs, dbfs=-18)
+    def _harmony(event):
+        return _osc(**event.kwargs, dbfs=-18)
 
-    # Grab score
-    metronome, melody, harmony = fetch_from_theorytab(sys.argv[1])
-
-    # Convert to playable score
-    playable_score = []
-    for time, kwargs in melody:
-        playable_score.append((time, _melody, kwargs))
-    for time, kwargs in harmony:
-        playable_score.append((time, _harmony, kwargs))
-
-    # Play audio
-    play(render_score(playable_score, metronome), normalize=True)
+    # Grab the score and render each part with its own instrument, then mix.
+    metronome, melody, harmony = fetch_theorytab(sys.argv[1])
+    melody_audio = melody.render(_melody, metronome=metronome)
+    harmony_audio = harmony.render(_harmony, metronome=metronome)
+    mixed = Audio.zeros(
+        max(melody_audio.num_samples, harmony_audio.num_samples),
+        1,
+        sample_rate=melody_audio.sample_rate,
+    )
+    mixed[: melody_audio.num_samples, :] += melody_audio
+    mixed[: harmony_audio.num_samples, :] += harmony_audio
+    play(mixed, normalize=True)
