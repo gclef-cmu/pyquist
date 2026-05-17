@@ -456,5 +456,53 @@ class TestPlayDispatch(unittest.TestCase):
             mock_play.assert_called_once()
 
 
+class TestInIPythonNotebook(unittest.TestCase):
+    """``_in_ipython_notebook`` must recognise every flavour of notebook
+    kernel — Jupyter, Colab, etc. — so that ``play`` doesn't fall through
+    to a sounddevice call that would crash in browser-hosted environments
+    with no audio device."""
+
+    def _fake_ipython_module(self, shell_class_name: str):
+        """Returns a fake ``IPython`` module whose ``get_ipython()`` yields a
+        shell of the given class name."""
+        # A real class (not MagicMock) is needed so .__class__.__name__ works.
+        shell_cls = type(shell_class_name, (), {})
+        fake_ipython = mock.MagicMock()
+        fake_ipython.get_ipython.return_value = shell_cls()
+        return fake_ipython
+
+    def test_jupyter_kernel_detected(self):
+        with mock.patch.dict(
+            "sys.modules", {"IPython": self._fake_ipython_module("ZMQInteractiveShell")}
+        ):
+            self.assertTrue(device._in_ipython_notebook())
+
+    def test_colab_kernel_detected(self):
+        # Google Colab's shell is `google.colab._shell.Shell`. The class name
+        # alone is enough to distinguish from the terminal REPL.
+        with mock.patch.dict(
+            "sys.modules", {"IPython": self._fake_ipython_module("Shell")}
+        ):
+            self.assertTrue(device._in_ipython_notebook())
+
+    def test_terminal_repl_not_detected(self):
+        with mock.patch.dict(
+            "sys.modules",
+            {"IPython": self._fake_ipython_module("TerminalInteractiveShell")},
+        ):
+            self.assertFalse(device._in_ipython_notebook())
+
+    def test_no_active_kernel_not_detected(self):
+        fake_ipython = mock.MagicMock()
+        fake_ipython.get_ipython.return_value = None
+        with mock.patch.dict("sys.modules", {"IPython": fake_ipython}):
+            self.assertFalse(device._in_ipython_notebook())
+
+    def test_no_ipython_installed_not_detected(self):
+        # Simulate IPython being missing entirely.
+        with mock.patch.dict("sys.modules", {"IPython": None}):
+            self.assertFalse(device._in_ipython_notebook())
+
+
 if __name__ == "__main__":
     unittest.main()

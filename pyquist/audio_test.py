@@ -103,6 +103,23 @@ class TestAudio(unittest.TestCase):
         self.assertAlmostEqual(audio.duration, 36.0, places=1)
         self.assertAlmostEqual(audio.peak_amplitude, 0.328, places=3)
 
+    def test_from_file_missing_raises_friendly_error(self):
+        # Without our pre-check, soundfile / libsndfile raises an opaque
+        # ``LibsndfileError: "System error"`` here. We promote it to a clean
+        # FileNotFoundError that includes the missing path.
+        missing = TEST_DATA_DIR / "definitely_not_a_real_file.wav"
+        with self.assertRaises(FileNotFoundError) as ctx:
+            Audio.from_file(missing)
+        self.assertIn(str(missing), str(ctx.exception))
+
+    def test_from_file_accepts_file_handle(self):
+        # File-like inputs skip the path pre-check (we can't sensibly probe a
+        # buffer for "existence"). Confirm the happy path still works.
+        with open(_BLUES_RIFF_WAV, "rb") as f:
+            audio = Audio.from_file(f)
+        self.assertEqual(audio.num_channels, 2)
+        self.assertEqual(audio.sample_rate, 48000)
+
     def test_normalize(self):
         audio = Audio.from_file(_BLUES_RIFF_WAV)
         # peak_dbfs=0 (default) → 1.0; -6 → ~0.501; +6 → ~1.995. These

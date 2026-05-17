@@ -57,6 +57,11 @@ pyquist = "pyquist.cli:main"
 include = ["pyquist*"]
 exclude = ["examples*", "docs*"]
 
+# Ship the bundled audio + MIDI samples (used by the HelloPyquist notebook,
+# the README examples, and the test suite). Total ~2 MB.
+[tool.setuptools.package-data]
+pyquist = ["test_data/*"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

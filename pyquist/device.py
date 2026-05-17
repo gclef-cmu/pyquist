@@ -76,17 +76,23 @@ def set_output_device(
 
 
 def _in_ipython_notebook() -> bool:
-    """Returns True if running inside a Jupyter / IPython notebook kernel.
+    """Returns True if running inside a notebook-style IPython kernel.
 
-    Distinguishes from the IPython terminal REPL (which uses
-    ``TerminalInteractiveShell``) and from plain Python.
+    Anything that isn't plain Python or the IPython terminal REPL counts —
+    this covers Jupyter (``ZMQInteractiveShell``), Google Colab
+    (``google.colab._shell.Shell``), VSCode notebooks, and other kernel
+    hosts where inline display is the right playback path.
     """
     try:
         from IPython import get_ipython  # type: ignore[import-not-found]
     except ImportError:
         return False
     ipy = get_ipython()
-    return ipy is not None and ipy.__class__.__name__ == "ZMQInteractiveShell"
+    if ipy is None:
+        return False
+    # The only IPython context where inline display ISN'T the right answer
+    # is the terminal REPL, which has its own audio output.
+    return ipy.__class__.__name__ != "TerminalInteractiveShell"
 
 
 def play(

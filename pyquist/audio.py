@@ -1,3 +1,4 @@
+import pathlib
 from io import BytesIO
 from typing import IO, Optional, Union
 from urllib.request import urlopen
@@ -73,14 +74,24 @@ class Audio:
         )
 
     @classmethod
-    def from_file(cls, file: Union[str, IO]) -> "Audio":
+    def from_file(cls, file: Union[str, pathlib.Path, IO]) -> "Audio":
         """Loads an ``Audio`` from a file on disk or a file-like object.
 
         Decoding is delegated to ``soundfile`` (libsndfile), which supports
         WAV, FLAC, OGG, MP3, and most common formats. The file's native sample
         rate is preserved; channels remain in their original order. Use
         :meth:`resample` to change the rate after loading.
+
+        Raises :class:`FileNotFoundError` (with the offending path) when
+        ``file`` is a path that doesn't exist — clearer than libsndfile's
+        generic ``"System error"`` message.
         """
+        # Pre-check path-like inputs so a missing file produces a useful error
+        # instead of LibsndfileError: "Error opening ...: System error.".
+        if isinstance(file, (str, pathlib.Path)):
+            path = pathlib.Path(file)
+            if not path.exists():
+                raise FileNotFoundError(f"Audio file not found: {path}.")
         samples, sample_rate = sf.read(file)
         return cls(samples, sample_rate=sample_rate)
 
