@@ -34,6 +34,12 @@ jobs:
         with:
           python-version: "3.10"
 
+      # PortAudio is a system dep for `sounddevice`. We mock sounddevice in
+      # conf.py so the docs build doesn't *need* it, but having it lets
+      # `pip install -e .` finish cleanly.
+      - name: Install system audio libraries
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+
       # Install pyquist itself plus the docs extras (sphinx + typehints
       # plugin). Without an install, autodoc can't import pyquist and ends
       # up generating empty module pages.

@@ -30,6 +30,22 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# Mock heavy / system-library-dependent imports so the docs can be built on
+# any machine (and in CI) without needing PortAudio, etc. None of these
+# modules appear in pyquist's public signatures, so mocking them doesn't
+# affect the rendered API.
+autodoc_mock_imports = [
+    "sounddevice",
+    "soundfile",
+    "resampy",
+    "mido",
+    "tqdm",
+    "requests",
+    "scipy",
+    "matplotlib",
+    "IPython",
+]
+
 # Cross-reference targets: clicking, e.g., `np.ndarray` in a signature lands
 # on the right page in the upstream docs.
 intersphinx_mapping = {
