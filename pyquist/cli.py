@@ -37,7 +37,10 @@ def _cmd_record(args: argparse.Namespace) -> None:
 
 
 def _cmd_freesound(args: argparse.Namespace) -> None:
-    audio, metadata = fetch_freesound(args.url)
+    # ``preview_tag=None`` fetches the original uncompressed file (OAuth2
+    # required — triggers an interactive auth flow on first use).
+    preview_tag = None if args.original else "preview-hq-ogg"
+    audio, metadata = fetch_freesound(args.url, preview_tag=preview_tag)
     for key in ("id", "name", "url", "license", "description"):
         print(f"{key}: {metadata.get(key, '')}")
     if args.output:
@@ -76,6 +79,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_freesound.add_argument("url", help="FreeSound URL or numeric ID.")
     p_freesound.add_argument("--output", "-o", help="Output file (optional).")
+    p_freesound.add_argument(
+        "--original",
+        action="store_true",
+        help=(
+            "Download the original, uncompressed audio file instead of the "
+            "default high-quality OGG preview. Requires a one-time OAuth2 "
+            "authorization flow."
+        ),
+    )
     p_freesound.set_defaults(func=_cmd_freesound)
 
     return parser
