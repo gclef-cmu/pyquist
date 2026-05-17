@@ -41,6 +41,10 @@ notebook = [
     "matplotlib",
     "scipy",
 ]
+docs = [
+    "sphinx>=7",
+    "sphinx-autodoc-typehints>=2",
+]
 
 [project.urls]
 Homepage = "https://github.com/gclef-cmu/pyquist"

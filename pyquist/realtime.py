@@ -14,27 +14,24 @@ class BlockMessage:
     """A real-time control input to an audio processor.
 
     Can come from a variety of sources, such as MIDI, OSC, or a GUI.
-
-    Attributes:
-        offset: The offset in samples from the start of the block.
-        data: The message data.
     """
 
     data: Any
+    """The message payload (opaque to the framework)."""
+
     offset: int = 0
+    """Sample offset from the start of the block at which the message fires."""
 
 
 @dataclass
 class Message:
-    """A message timestamped in seconds, mainly used for scheduling.
-
-    Attributes:
-        time: The time in seconds. ASAP if <=0.
-        data: The message data.
-    """
+    """A message timestamped in seconds, mainly used for scheduling."""
 
     data: Any
+    """The message payload (opaque to the framework)."""
+
     time: float = 0.0
+    """Wall-clock time in seconds. ASAP if ``<= 0``."""
 
 
 class AudioProcessor(abc.ABC):

@@ -58,4 +58,3 @@ typehints_document_rtype = True
 # -- HTML output -------------------------------------------------------------
 
 html_theme = "alabaster"
-html_static_path = ["_static"]

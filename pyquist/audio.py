@@ -12,16 +12,12 @@ from .helper import db_to_amplitude
 class Audio:
     """A wrapper around a 2D float32 numpy array of audio samples.
 
-    By convention, sample values in ``[-1.0, 1.0]`` correspond to digital
-    full-scale amplitude. Values outside this range are valid in memory but
-    will clip when sent to playback or written to most file formats.
-
-    Attributes:
-        samples: A numpy array of shape ``(num_samples, num_channels)`` and
-            dtype ``np.float32``. Assigning to this attribute validates the
-            value and reshapes 0-D / 1-D inputs as needed (see the setter).
-        sample_rate: The sample rate in Hz (e.g. ``44100``). May be ``None``
-            for buffers that have no defined rate, such as raw sample buffers.
+    The two primary attributes are :attr:`samples` (a ``float32`` array
+    shaped ``(num_samples, num_channels)``) and :attr:`sample_rate` (Hz, or
+    ``None`` for buffers without a defined rate). By convention, sample
+    values in ``[-1.0, 1.0]`` correspond to digital full-scale amplitude;
+    values outside this range are valid in memory but will clip when sent
+    to playback or written to most file formats.
 
     Example:
         >>> import numpy as np

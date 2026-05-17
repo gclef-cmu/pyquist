@@ -47,18 +47,15 @@ _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
 
 
 class HarmonyType(enum.Enum):
-    """How chord events are represented in the parsed harmony score.
-
-    Attributes:
-        SYMBOL: A single ``"symbol"`` kwarg per chord event (e.g. ``"Cmaj7"``).
-            **Not yet implemented** — pass this and you'll get a
-            ``NotImplementedError`` upfront.
-        ROOT_POSITION_NOTES: One :class:`SoundEvent` per chord *tone*, each
-            with a ``"pitch"`` kwarg. Several events share the same ``time``.
-    """
+    """How chord events are represented in the parsed harmony score."""
 
     SYMBOL = 0
+    """A single ``"symbol"`` kwarg per chord (e.g. ``"Cmaj7"``).
+    **Not yet implemented** — passing this raises ``NotImplementedError``."""
+
     ROOT_POSITION_NOTES = 1
+    """One :class:`SoundEvent` per chord tone, each with a ``"pitch"`` kwarg.
+    Several events share the same ``time``."""
 
 
 # ---------------------------------------------------------------------------

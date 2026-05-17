@@ -5,6 +5,10 @@ import numpy as np
 from .audio import Audio
 from .paths import TEST_DATA_DIR
 
+# Bundled freesound clips named by their numeric freesound ID for traceability.
+_BLUES_RIFF_WAV = TEST_DATA_DIR / "388954__fullmetaljedi__blues-riff-in-g-nylon.wav"
+_DRUM_PATTERN_MP3 = TEST_DATA_DIR / "434013__mrpearch__drum-patern.mp3"
+
 
 class TestAudio(unittest.TestCase):
     def test_construction_and_setter_normalization(self):
@@ -79,24 +83,38 @@ class TestAudio(unittest.TestCase):
         with self.assertRaises(ValueError):
             Audio.zeros(10, -1)
 
-    def test_from_file(self):
-        audio = Audio.from_file(TEST_DATA_DIR / "short_stereo_mp3_22050hz.mp3")
+    def test_from_file_wav(self):
+        # 388954__fullmetaljedi__blues-riff-in-g-nylon.wav: stereo, 48 kHz.
+        audio = Audio.from_file(_BLUES_RIFF_WAV)
         self.assertEqual(audio.num_channels, 2)
-        self.assertEqual(audio.num_samples, 101155)
-        self.assertEqual(audio.sample_rate, 22050)
-        self.assertEqual(audio.shape, (101155, 2))
-        self.assertAlmostEqual(audio.peak_amplitude, 0.291, places=3)
-        self.assertAlmostEqual(audio.duration, 4.59, places=2)
+        self.assertEqual(audio.num_samples, 216873)
+        self.assertEqual(audio.sample_rate, 48000)
+        self.assertEqual(audio.shape, (216873, 2))
+        self.assertAlmostEqual(audio.peak_amplitude, 0.950, places=3)
+        self.assertAlmostEqual(audio.duration, 4.518, places=3)
+
+    def test_from_file_mp3(self):
+        # 434013__mrpearch__drum-patern.mp3: stereo, 44.1 kHz.
+        # MP3 frame counts can vary slightly between decoder versions, so the
+        # length assertion is loose.
+        audio = Audio.from_file(_DRUM_PATTERN_MP3)
+        self.assertEqual(audio.num_channels, 2)
+        self.assertEqual(audio.sample_rate, 44100)
+        self.assertAlmostEqual(audio.duration, 36.0, places=1)
+        self.assertAlmostEqual(audio.peak_amplitude, 0.328, places=3)
 
     def test_normalize(self):
-        audio = Audio.from_file(TEST_DATA_DIR / "short_stereo_mp3_22050hz.mp3")
+        audio = Audio.from_file(_BLUES_RIFF_WAV)
+        # peak_dbfs=0 (default) → 1.0; -6 → ~0.501; +6 → ~1.995. These
+        # values don't depend on the input peak (they're absolute targets).
         audio_norm = audio.normalize(in_place=False)
         self.assertAlmostEqual(audio_norm.peak_amplitude, 1.0, places=3)
         audio_norm = audio.normalize(peak_dbfs=-6.0, in_place=False)
         self.assertAlmostEqual(audio_norm.peak_amplitude, 0.501, places=3)
         audio_norm = audio.normalize(peak_dbfs=6.0, in_place=False)
         self.assertAlmostEqual(audio_norm.peak_amplitude, 1.995, places=3)
-        self.assertAlmostEqual(audio.peak_amplitude, 0.291, places=3)
+        # in_place=False above doesn't mutate the source.
+        self.assertAlmostEqual(audio.peak_amplitude, 0.950, places=3)
         audio.normalize()
         self.assertAlmostEqual(audio.peak_amplitude, 1.0, places=3)
 
@@ -106,7 +124,7 @@ class TestAudio(unittest.TestCase):
         self.assertEqual(silent.peak_amplitude, 0.0)
 
     def test_clip(self):
-        audio = Audio.from_file(TEST_DATA_DIR / "short_stereo_mp3_22050hz.mp3")
+        audio = Audio.from_file(_BLUES_RIFF_WAV)
         audio.normalize()
         audio_clipped = audio.clip(in_place=False)
         self.assertAlmostEqual(audio_clipped.peak_amplitude, 1.0, places=3)
@@ -117,12 +135,13 @@ class TestAudio(unittest.TestCase):
         self.assertAlmostEqual(audio.peak_amplitude, 0.25, places=3)
 
     def test_resample(self):
-        audio = Audio.from_file(TEST_DATA_DIR / "short_stereo_mp3_22050hz.mp3")
-        resampled = audio.resample(44100)
+        # Downsample 48 kHz → 24 kHz (clean 2× ratio).
+        audio = Audio.from_file(_BLUES_RIFF_WAV)
+        resampled = audio.resample(24000)
         self.assertEqual(resampled.num_channels, 2)
-        self.assertEqual(resampled.num_samples, audio.num_samples * 2)
-        self.assertEqual(resampled.sample_rate, 44100)
-        self.assertAlmostEqual(resampled.duration, 4.59, places=2)
+        self.assertEqual(resampled.num_samples, audio.num_samples // 2)
+        self.assertEqual(resampled.sample_rate, 24000)
+        self.assertAlmostEqual(resampled.duration, audio.duration, places=3)
 
         with self.assertRaises(ValueError):
             audio.resample(-1)
