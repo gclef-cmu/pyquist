@@ -22,7 +22,6 @@ API reference
    api/plot
    api/device
    api/helper
-   api/realtime
    api/web
 
 

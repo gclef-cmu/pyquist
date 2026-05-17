@@ -375,7 +375,8 @@ class TestAudio(unittest.TestCase):
 
     def test_buffer_view_pattern(self):
         # Audio without a sample_rate (buffer-style) keeps a reference to the
-        # underlying array — important for the realtime callback pattern.
+        # underlying array (no copy) — useful when wrapping an externally
+        # owned buffer such as one a real-time callback writes into.
         backing = np.zeros((512, 2), dtype=np.float32)
         buffer = Audio(backing)
         self.assertIs(buffer.samples, backing)
