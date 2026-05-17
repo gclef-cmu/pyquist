@@ -21,10 +21,12 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio",
 ]
 dependencies = [
+    "matplotlib",
     "mido",
     "numpy>=2.0",
     "requests",
     "resampy",
+    "scipy",
     "sounddevice",
     "soundfile",
     "tqdm",
@@ -38,8 +40,6 @@ dev = [
 ]
 notebook = [
     "ipython",
-    "matplotlib",
-    "scipy",
 ]
 docs = [
     "sphinx>=7",
