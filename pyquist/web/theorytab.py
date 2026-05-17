@@ -12,7 +12,6 @@ Downloaded JSON is cached under ``CACHE_DIR / "theorytab"`` so repeat lookups
 are free.
 """
 
-import enum
 import json
 from typing import Any, Dict, List, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -44,18 +43,6 @@ _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
     "harmonicMinor": (2, 1, 2, 2, 1, 3),
     "phrygianDominant": (1, 3, 1, 2, 1, 2),
 }
-
-
-class HarmonyType(enum.Enum):
-    """How chord events are represented in the parsed harmony score."""
-
-    SYMBOL = 0
-    """A single ``"symbol"`` kwarg per chord (e.g. ``"Cmaj7"``).
-    **Not yet implemented** — passing this raises ``NotImplementedError``."""
-
-    ROOT_POSITION_NOTES = 1
-    """One :class:`SoundEvent` per chord tone, each with a ``"pitch"`` kwarg.
-    Several events share the same ``time``."""
 
 
 # ---------------------------------------------------------------------------
@@ -183,41 +170,6 @@ def _theorytab_chord_to_pitches(
     return [key_tonic_pc + v for _, v in chord_degree_to_interval.items()]
 
 
-# Mapping from chord-degree tuples to LilyPond-style chord-symbol names,
-# referenced by the (unimplemented) chord-to-symbol path below.
-_CHORD_DEGREES_TO_LILY_NAME = {
-    (4, 3): "",  # Major
-    (3, 4): "m",  # Minor
-    (3, 4, 3): "m7",  # Minor 7
-    (4, 3, 3): "7",  # 7
-    (4, 3, 4): "maj7",  # Major 7
-    (5, 2): "sus4",  # Sus 4
-    (4, 3, 7): "9^7",  # Add 9
-    (3, 3): "dim",  # Dim
-    (3, 3, 4): "m7.5-",  # Dim minor 7
-    (2, 5): "sus2",  # Sus 2
-    (5, 2, 3): "7sus4",  # 7 Sus 4
-    (3, 4, 3, 4): "m9",  # Minor 9
-    (4, 3, 4, 3): "maj9",  # Major 9
-    (2, 5, 3): "7sus2",  # 7 Sus 2
-    (3, 4, 7): "m9^7",  # Minor Add 9
-    (3, 3, 3): "dim7",  # Dim 7
-    (2, 5, 4): "maj7sus2",  # Major 7 Sus 2
-    (4, 3, 3, 4): "9",  # 9
-    (2, 3, 2): "11.9^7",  # Sus 2 Sus 4
-    (4, 4): "aug",  # Aug
-}
-
-
-def _theorytab_chord_to_symbol(chord: Dict[str, Any], key: Dict[str, Any]) -> str:
-    """Converts a TheoryTab JSON chord/key into a chord symbol (e.g. ``"Cmaj7"``).
-
-    See :data:`_CHORD_DEGREES_TO_LILY_NAME` for the suffix table.
-    Currently a stub — left as an exercise for an intrepid student.
-    """
-    raise NotImplementedError("Left as exercise to intrepid student.")
-
-
 # ---------------------------------------------------------------------------
 # URL / ID parsing
 # ---------------------------------------------------------------------------
@@ -301,7 +253,6 @@ def theorytab_json_to_score(
     song_data: dict,
     *,
     durations_in_beats: bool = False,
-    harmony_type: HarmonyType = HarmonyType.ROOT_POSITION_NOTES,
     melody_octave: int = 5,
     harmony_octave: int = 4,
 ) -> Tuple[Metronome, Score, Score]:
@@ -311,13 +262,16 @@ def theorytab_json_to_score(
     with the returned :class:`BasicMetronome` when rendering so beats are
     converted to seconds.
 
+    Chord events are emitted as one :class:`SoundEvent` per chord tone in
+    root position, each with a ``"pitch"`` kwarg — so a triad at beat 4
+    becomes three events sharing ``time == 4.0``.
+
     Args:
         song_data: TheoryTab JSON (as returned by :func:`fetch_theorytab_json`).
         durations_in_beats: If ``False`` (default), each event's
             ``kwargs["duration"]`` is converted to **seconds** via the
             song's tempo. If ``True``, durations stay in beats and the
             instrument is responsible for any further conversion.
-        harmony_type: How to encode chord events — see :class:`HarmonyType`.
         melody_octave: Octave offset added to melody pitches.
         harmony_octave: Octave offset added to harmony pitches.
 
@@ -328,13 +282,8 @@ def theorytab_json_to_score(
 
     Raises:
         NotImplementedError: if the song's time signature / tempo / key
-            structure is more complex than this parser supports, or if
-            ``harmony_type=HarmonyType.SYMBOL`` (not yet implemented).
+            structure is more complex than this parser supports.
     """
-    if harmony_type == HarmonyType.SYMBOL:
-        # Fail upfront rather than partway through the chord loop.
-        raise NotImplementedError("HarmonyType.SYMBOL is not implemented yet.")
-
     # We only support single-section songs in 3/4 or 4/4, single-tempo, single-key.
     meters = song_data["meters"]
     if (
@@ -395,7 +344,7 @@ def theorytab_json_to_score(
     return metronome, Score(melody), Score(harmony)
 
 
-def fetch(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
+def fetch_theorytab(id_or_url: str, **kwargs) -> Tuple[Metronome, Score, Score]:
     """Fetches and parses a TheoryTab song in one call.
 
     Equivalent to ``theorytab_json_to_score(fetch_theorytab_json(id_or_url),
@@ -446,7 +395,7 @@ if __name__ == "__main__":
         return _osc(**event.kwargs, dbfs=-18)
 
     # Grab the score and render each part with its own instrument, then mix.
-    metronome, melody, harmony = fetch(sys.argv[1])
+    metronome, melody, harmony = fetch_theorytab(sys.argv[1])
     melody_audio = melody.render(_melody, metronome=metronome)
     harmony_audio = harmony.render(_harmony, metronome=metronome)
     mixed = Audio.zeros(
