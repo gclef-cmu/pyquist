@@ -237,7 +237,7 @@ class Score(UserList):
     def segment(
         self,
         *,
-        offset: float = 0.0,
+        offset: Optional[float] = None,
         duration: Optional[float] = None,
         relativize: bool = True,
     ) -> "Score":
@@ -247,23 +247,24 @@ class Score(UserList):
         - 1e-9``) to suppress floating-point off-by-ones at exact-end matches.
 
         Args:
-            offset: Lower bound on event time (inclusive). Defaults to ``0.0``.
-            duration: Length of the window. If ``None`` (default), no upper
-                bound is applied.
+            offset: Lower bound on event time (inclusive). Defaults to the
+                beginning of the score (``0.0``).
+            duration: Length of the window. Defaults to the rest of the score
+                (no upper bound).
             relativize: If ``True`` (default), shift every kept event's
                 ``time`` by ``-offset`` so the returned score begins at 0.
                 If ``False``, keep the original timestamps.
         """
-        end = float("inf") if duration is None else offset + duration - _SEGMENT_EPS
-        shift = offset if relativize else 0.0
-        return type(self)(
-            e._replace(time=e.time - shift) for e in self if offset <= e.time < end
+        start = offset or 0.0
+        end = float("inf") if duration is None else start + duration - _SEGMENT_EPS
+        shift = start if relativize else 0.0
+        return Score(
+            Event(e.time - shift, e.kwargs) for e in self if start <= e.time < end
         )
 
     def render(
         self,
         instrument: Instrument,
-        *,
         metronome: Optional[Metronome] = None,
     ) -> Audio:
         """Renders this score to a single mixed :class:`Audio`.

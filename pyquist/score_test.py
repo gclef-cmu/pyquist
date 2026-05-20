@@ -354,6 +354,7 @@ class TestScoreFromMidi(unittest.TestCase):
             "velocity",
             "program",
             "is_drum",
+            "channel",
         }
         for event in score[:50]:
             self.assertEqual(set(event.kwargs.keys()), expected)
