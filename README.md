@@ -25,17 +25,17 @@ pq.plot_spec(audio)   # spectrogram
 Loading and transforming:
 
 ```python
-speech = pq.Audio.from_url(
-    "https://github.com/librosa/data/raw/refs/heads/main/audio/198-209-0000.hq.ogg"
+riff = pq.Audio.from_url(
+    "https://github.com/gclef-cmu/pyquist/raw/refs/heads/main/pyquist/test_data/388954__fullmetaljedi__blues-riff-in-g-nylon.wav"
 )
-clip = speech.segment(offset=5.0, duration=3.0).resample(8000)
+clip = riff.segment(offset=5.0, duration=3.0).resample(8000)
 pq.play(clip)
 ```
 
 Rendering a `Score` with a custom instrument:
 
 ```python
-from pyquist.score import Score, SoundEvent, BasicMetronome
+from pyquist.score import Score, Event, BasicMetronome
 from pyquist.helper import pitch_to_frequency
 
 def sine_instrument(event):
@@ -45,9 +45,9 @@ def sine_instrument(event):
     return pq.Audio(0.3 * np.sin(2 * np.pi * freq * t) * np.exp(-3 * t), sample_rate=sr)
 
 score = Score([
-    SoundEvent(0, {"pitch": 60, "duration": 0.5}),
-    SoundEvent(1, {"pitch": 64, "duration": 0.5}),
-    SoundEvent(2, {"pitch": 67, "duration": 0.5}),
+    Event(0, {"pitch": 60, "duration": 0.5}),
+    Event(1, {"pitch": 64, "duration": 0.5}),
+    Event(2, {"pitch": 67, "duration": 0.5}),
 ])
 pq.play(score.render(sine_instrument, metronome=BasicMetronome(120)))
 ```
@@ -56,12 +56,12 @@ For a guided walkthrough â€” visualization, MIDI parsing, scores, instruments â€
 
 ## Installation
 
-Requires **Python 3.10 or later**.
+Requires **Python 3.10 or later** and **git** (used by `pip` to fetch the package).
 
 ### macOS
 
 ```sh
-brew install python@3.10              # or 3.11, 3.12, 3.13
+brew install git python@3.10          # or 3.11, 3.12, 3.13
 python3.10 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
@@ -71,14 +71,14 @@ If `pq.play(...)` is silent, give Terminal (or your IDE) microphone/audio access
 
 ### Linux
 
-Install Python and the PortAudio system library that `sounddevice` wraps:
+Install Python, git, and the PortAudio system library that `sounddevice` wraps:
 
 ```sh
 # Debian / Ubuntu
-sudo apt install python3 python3-venv libportaudio2
+sudo apt install python3 python3-venv git libportaudio2
 
 # Fedora
-sudo dnf install python3 python3-virtualenv portaudio
+sudo dnf install python3 python3-virtualenv git portaudio
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -87,11 +87,11 @@ pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
 
 ### Windows
 
-Install Python from [python.org](https://www.python.org/downloads/) (3.10 or later, with "Add Python to PATH" checked), then in **PowerShell**:
+Install [Python](https://www.python.org/downloads/) (3.10 or later, with "Add Python to PATH" checked) and [Git for Windows](https://git-scm.com/download/win), then open **Command Prompt**:
 
-```powershell
+```bat
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate.bat
 pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
 ```
 

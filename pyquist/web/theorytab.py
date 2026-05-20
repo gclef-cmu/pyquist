@@ -21,7 +21,7 @@ import requests
 
 from ..helper import pitch_name_to_pitch
 from ..paths import CACHE_DIR as _ROOT_CACHE_DIR
-from ..score import BasicMetronome, Metronome, Score, SoundEvent
+from ..score import BasicMetronome, Event, Metronome, Score
 
 _CACHE_DIR = _ROOT_CACHE_DIR / "theorytab"
 
@@ -262,7 +262,7 @@ def theorytab_json_to_score(
     with the returned :class:`BasicMetronome` when rendering so beats are
     converted to seconds.
 
-    Chord events are emitted as one :class:`SoundEvent` per chord tone in
+    Chord events are emitted as one :class:`Event` per chord tone in
     root position, each with a ``"pitch"`` kwarg — so a triad at beat 4
     becomes three events sharing ``time == 4.0``.
 
@@ -310,7 +310,7 @@ def theorytab_json_to_score(
     key = keys[0]
 
     # Parse melody
-    melody: List[SoundEvent] = []
+    melody: List[Event] = []
     for note in song_data["notes"]:
         if note["isRest"]:
             continue
@@ -319,11 +319,11 @@ def theorytab_json_to_score(
         if not durations_in_beats:
             duration = metronome.tick_to_seconds(duration)
         pitch = _theorytab_note_to_pitch(note, key) + melody_octave * 12
-        melody.append(SoundEvent(beat, {"duration": duration, "pitch": pitch}))
+        melody.append(Event(beat, {"duration": duration, "pitch": pitch}))
     melody.sort(key=lambda e: e.time)
 
     # Parse harmony (chords)
-    harmony: List[SoundEvent] = []
+    harmony: List[Event] = []
     for chord in song_data["chords"]:
         if chord["isRest"]:
             continue
@@ -334,7 +334,7 @@ def theorytab_json_to_score(
         pitches = _theorytab_chord_to_pitches(chord, key)
         for pitch in pitches:
             harmony.append(
-                SoundEvent(
+                Event(
                     beat,
                     {"duration": duration, "pitch": pitch + harmony_octave * 12},
                 )

@@ -26,7 +26,6 @@ dependencies = [
     "numpy>=2.0",
     "requests",
     "resampy",
-    "scipy",
     "sounddevice",
     "soundfile",
     "tqdm",

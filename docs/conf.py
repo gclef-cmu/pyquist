@@ -41,7 +41,6 @@ autodoc_mock_imports = [
     "mido",
     "tqdm",
     "requests",
-    "scipy",
     "matplotlib",
     "IPython",
 ]

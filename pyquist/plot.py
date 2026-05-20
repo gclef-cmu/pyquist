@@ -11,7 +11,6 @@ from typing import Optional, Tuple
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import signal as scipy_signal
 
 from .audio import Audio
 from .helper import amplitude_to_db
@@ -195,7 +194,6 @@ def plot_spec(
     duration: Optional[float] = None,
     n_fft: int = 2048,
     hop_length: int = 512,
-    window: str = "hann",
     log_frequency: bool = True,
     log_amplitude: bool = True,
     dynamic_range_db: float = 80.0,
@@ -205,9 +203,10 @@ def plot_spec(
 ) -> matplotlib.axes.Axes:
     """Plots a magnitude spectrogram of an Audio.
 
-    Multi-channel audio is first mixed to mono. The STFT uses the given
-    window and overlap; magnitudes are optionally converted to dB and
-    plotted on a log-frequency axis (both defaults).
+    Multi-channel audio is first mixed to mono. A Hann-windowed STFT with
+    ``n_fft`` window size and ``hop_length`` frame advance is computed;
+    magnitudes are optionally converted to dB and plotted on a log-frequency
+    axis (both defaults).
 
     Args:
         audio: The audio to analyze. Must have a ``sample_rate``.
@@ -215,7 +214,6 @@ def plot_spec(
         duration: Length to analyze in seconds. Defaults to the rest of the audio.
         n_fft: STFT window size in samples. Defaults to 2048 (~46 ms at 44.1 kHz).
         hop_length: Frame advance in samples. Defaults to 512 (75% overlap).
-        window: Window function passed to ``scipy.signal.stft``. Defaults to ``"hann"``.
         log_frequency: If True (default), the y-axis uses a log scale.
         log_amplitude: If True (default), magnitudes are converted to dB
             (via :func:`pyquist.helper.amplitude_to_db`).
@@ -243,16 +241,17 @@ def plot_spec(
             f"which is shorter than n_fft={n_fft}. "
             f"Use a smaller n_fft or a longer duration."
         )
-    f, t, zxx = scipy_signal.stft(
-        seg.samples[:, 0],
-        fs=audio.sample_rate,
-        window=window,
-        nperseg=n_fft,
-        noverlap=n_fft - hop_length,
-        return_onesided=True,
+    samples = seg.samples[:, 0]
+    win = np.hanning(n_fft).astype(samples.dtype)
+    frames = [
+        np.fft.rfft(samples[i : i + n_fft] * win)
+        for i in range(0, len(samples) - n_fft + 1, hop_length)
+    ]
+    zxx = np.stack(frames, axis=1)
+    t = np.arange(len(frames)) * hop_length / audio.sample_rate + max(
+        0.0, offset or 0.0
     )
-    # Shift the time axis so x-axis labels reflect the original audio's timeline.
-    t = t + max(0.0, offset or 0.0)
+    f = np.fft.rfftfreq(n_fft, d=1.0 / audio.sample_rate)
 
     magnitude = np.abs(zxx)
     if log_amplitude:

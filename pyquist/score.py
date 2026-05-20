@@ -1,6 +1,6 @@
 """Score representation, rendering, and MIDI ingestion.
 
-A :class:`Score` is a list of :class:`SoundEvent` — onset-based musical events.
+A :class:`Score` is a list of :class:`Event` — onset-based musical events.
 ``Score`` behaves like a regular Python list (subclass of
 :class:`collections.UserList`): you can iterate, index, slice, concatenate
 with ``+``, repeat with ``*``, append, etc. — all preserving ``Score`` type.
@@ -12,7 +12,7 @@ metronome is kept as a separate object (a :class:`Metronome` instance) and
 passed explicitly to :meth:`Score.render` when needed.
 
 To turn a ``Score`` into audio, call :meth:`Score.render` with an
-:class:`Instrument` — a callable taking a :class:`SoundEvent` and returning
+:class:`Instrument` — a callable taking an :class:`Event` and returning
 :class:`Audio`. For per-event dispatch (e.g. different sounds for drums vs.
 pitched notes), just branch inside the instrument::
 
@@ -62,7 +62,7 @@ _KwargsDict: TypeAlias = Dict[str, Any]
 _SEGMENT_EPS = 1e-9
 
 
-class SoundEvent(NamedTuple):
+class Event(NamedTuple):
     """A timestamped, instrument-agnostic musical event.
 
     ``time`` is in seconds when the score is rendered without a metronome,
@@ -70,17 +70,17 @@ class SoundEvent(NamedTuple):
     ticks, ...) when a metronome is supplied. ``kwargs`` is opaque to the
     score; it is forwarded to the instrument at render time.
 
-    ``SoundEvent`` is a ``NamedTuple``: it unpacks like a regular tuple
+    ``Event`` is a ``NamedTuple``: it unpacks like a regular tuple
     (``time, kwargs = event``), can be constructed positionally
-    (``SoundEvent(0.5, {"pitch": 60})``) or by keyword.
+    (``Event(0.5, {"pitch": 60})``) or by keyword.
     """
 
     time: float
     kwargs: _KwargsDict
 
 
-# A callable that takes a SoundEvent and returns its rendered Audio.
-Instrument: TypeAlias = Callable[[SoundEvent], Audio]
+# A callable that takes an Event and returns its rendered Audio.
+Instrument: TypeAlias = Callable[[Event], Audio]
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ class BasicMetronome(Metronome):
 
 
 class Score(UserList):
-    """A list of :class:`SoundEvent` with music-specific helpers.
+    """A list of :class:`Event` with music-specific helpers.
 
     ``Score`` subclasses :class:`collections.UserList`, so all the standard
     list operations work and preserve ``Score`` type — ``+``, ``*``,
@@ -144,7 +144,7 @@ class Score(UserList):
 
     Construct from any iterable of events::
 
-        Score([SoundEvent(0.0, {"pitch": 60}), SoundEvent(1.0, {"pitch": 64})])
+        Score([Event(0.0, {"pitch": 60}), Event(1.0, {"pitch": 64})])
 
     Or load from a MIDI file via :meth:`from_midi`.
     """
@@ -183,7 +183,7 @@ class Score(UserList):
     ) -> Tuple["Score", "MIDIMetronome"]:
         """Parses a MIDI file into a ``(score, metronome)`` pair.
 
-        Each note across all tracks becomes one :class:`SoundEvent`:
+        Each note across all tracks becomes one :class:`Event`:
 
         * ``time`` — the MIDI tick at which the note begins (NOTE_ON).
         * ``kwargs["off_tick"]`` — the tick at which the note ends.
@@ -390,11 +390,9 @@ class MIDIMetronome(Metronome):
         )
 
 
-def _parse_midi_notes(
-    mid: mido.MidiFile, metronome: "MIDIMetronome"
-) -> List[SoundEvent]:
-    """Walks all tracks, pairing note_on/note_off into SoundEvents."""
-    events: List[SoundEvent] = []
+def _parse_midi_notes(mid: mido.MidiFile, metronome: "MIDIMetronome") -> List[Event]:
+    """Walks all tracks, pairing note_on/note_off into Events."""
+    events: List[Event] = []
     for track in mid.tracks:
         abs_tick = 0
         # Per-track-and-channel program (MIDI Program Change is per-channel,
@@ -426,7 +424,7 @@ def _parse_midi_notes(
                     off_tick
                 ) - metronome.tick_to_seconds(on_tick)
                 events.append(
-                    SoundEvent(
+                    Event(
                         time=on_tick,
                         kwargs={
                             "off_tick": off_tick,
