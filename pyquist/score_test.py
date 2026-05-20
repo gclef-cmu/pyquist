@@ -6,16 +6,16 @@ from .audio import Audio
 from .paths import TEST_DATA_DIR
 from .score import (
     BasicMetronome,
+    Event,
     Metronome,
     MIDIMetronome,
     Score,
-    SoundEvent,
 )
 
 _BOLERO_MIDI = TEST_DATA_DIR / "ravel_bolero.mid"
 
 
-def _const_tone(event: SoundEvent) -> Audio:
+def _const_tone(event: Event) -> Audio:
     """Test instrument: returns a flat-amplitude audio of ``event.kwargs['duration']`` seconds."""
     sample_rate = event.kwargs.get("sample_rate", 1000)
     return Audio(
@@ -28,7 +28,7 @@ def _const_tone(event: SoundEvent) -> Audio:
     )
 
 
-def _stereo_tone(event: SoundEvent) -> Audio:
+def _stereo_tone(event: Event) -> Audio:
     sample_rate = event.kwargs.get("sample_rate", 1000)
     return Audio(
         np.full(
@@ -40,16 +40,16 @@ def _stereo_tone(event: SoundEvent) -> Audio:
     )
 
 
-class TestSoundEvent(unittest.TestCase):
+class TestEvent(unittest.TestCase):
     def test_construction_positional_and_keyword(self):
-        a = SoundEvent(0.5, {"pitch": 60})
-        b = SoundEvent(time=0.5, kwargs={"pitch": 60})
+        a = Event(0.5, {"pitch": 60})
+        b = Event(time=0.5, kwargs={"pitch": 60})
         self.assertEqual(a, b)
         self.assertEqual(a.time, 0.5)
         self.assertEqual(a.kwargs, {"pitch": 60})
 
     def test_unpacks_like_tuple(self):
-        event = SoundEvent(0.5, {"pitch": 60})
+        event = Event(0.5, {"pitch": 60})
         time, kwargs = event
         self.assertEqual(time, 0.5)
         self.assertEqual(kwargs, {"pitch": 60})
@@ -57,7 +57,7 @@ class TestSoundEvent(unittest.TestCase):
 
 class TestScoreListBehavior(unittest.TestCase):
     def test_construction_from_iterable(self):
-        events = [SoundEvent(0.0, {}), SoundEvent(1.0, {})]
+        events = [Event(0.0, {}), Event(1.0, {})]
         score = Score(events)
         self.assertEqual(len(score), 2)
         self.assertEqual(score[0], events[0])
@@ -67,62 +67,62 @@ class TestScoreListBehavior(unittest.TestCase):
 
     def test_append_and_iterate(self):
         score = Score()
-        score.append(SoundEvent(0.0, {}))
-        score.append(SoundEvent(1.0, {}))
+        score.append(Event(0.0, {}))
+        score.append(Event(1.0, {}))
         times = [e.time for e in score]
         self.assertEqual(times, [0.0, 1.0])
 
     def test_slicing_returns_score(self):
-        score = Score([SoundEvent(t, {}) for t in (0.0, 1.0, 2.0)])
+        score = Score([Event(t, {}) for t in (0.0, 1.0, 2.0)])
         sliced = score[1:]
         self.assertIsInstance(sliced, Score)
         self.assertEqual(len(sliced), 2)
 
     def test_addition_returns_score(self):
-        a = Score([SoundEvent(0.0, {})])
-        b = Score([SoundEvent(1.0, {})])
+        a = Score([Event(0.0, {})])
+        b = Score([Event(1.0, {})])
         combined = a + b
         self.assertIsInstance(combined, Score)
         self.assertEqual(len(combined), 2)
         # The whole point of UserList: this also works for 3+ scores.
-        c = Score([SoundEvent(2.0, {})])
+        c = Score([Event(2.0, {})])
         big = a + b + c
         self.assertIsInstance(big, Score)
         self.assertEqual([e.time for e in big], [0.0, 1.0, 2.0])
 
     def test_iadd_returns_score(self):
-        a = Score([SoundEvent(0.0, {})])
-        a += Score([SoundEvent(1.0, {})])
+        a = Score([Event(0.0, {})])
+        a += Score([Event(1.0, {})])
         self.assertIsInstance(a, Score)
         self.assertEqual(len(a), 2)
 
     def test_multiplication_returns_score(self):
-        a = Score([SoundEvent(0.0, {})])
+        a = Score([Event(0.0, {})])
         repeated = a * 3
         self.assertIsInstance(repeated, Score)
         self.assertEqual(len(repeated), 3)
 
     def test_copy_returns_score(self):
-        a = Score([SoundEvent(0.0, {})])
+        a = Score([Event(0.0, {})])
         self.assertIsInstance(a.copy(), Score)
 
 
 class TestScoreProperties(unittest.TestCase):
     def test_start_end_duration(self):
-        score = Score(SoundEvent(t, {}) for t in (0.5, 1.5, 3.0))
+        score = Score(Event(t, {}) for t in (0.5, 1.5, 3.0))
         self.assertEqual(score.start_time, 0.5)
         self.assertEqual(score.end_time, 3.0)
         self.assertEqual(score.duration, 2.5)
 
     def test_single_event(self):
-        score = Score([SoundEvent(2.0, {})])
+        score = Score([Event(2.0, {})])
         self.assertEqual(score.start_time, 2.0)
         self.assertEqual(score.end_time, 2.0)
         self.assertEqual(score.duration, 0.0)
 
     def test_unordered_events(self):
         # start_/end_time use min/max, not first/last.
-        score = Score([SoundEvent(5.0, {}), SoundEvent(1.0, {}), SoundEvent(3.0, {})])
+        score = Score([Event(5.0, {}), Event(1.0, {}), Event(3.0, {})])
         self.assertEqual(score.start_time, 1.0)
         self.assertEqual(score.end_time, 5.0)
 
@@ -138,24 +138,24 @@ class TestScoreProperties(unittest.TestCase):
 
 class TestScoreSegment(unittest.TestCase):
     def test_offset_and_duration(self):
-        score = Score(SoundEvent(t, {}) for t in (0.0, 0.5, 1.0, 1.5, 2.0))
+        score = Score(Event(t, {}) for t in (0.0, 0.5, 1.0, 1.5, 2.0))
         sliced = score.segment(offset=0.5, duration=1.0)
         self.assertEqual([e.time for e in sliced], [0.5, 1.0])
 
     def test_returns_score(self):
-        score = Score([SoundEvent(0.0, {}), SoundEvent(0.5, {})])
+        score = Score([Event(0.0, {}), Event(0.5, {})])
         self.assertIsInstance(score.segment(offset=0.0, duration=10.0), Score)
 
     def test_eps_excludes_exact_end(self):
-        score = Score([SoundEvent(0.0, {}), SoundEvent(1.0, {})])
+        score = Score([Event(0.0, {}), Event(1.0, {})])
         self.assertEqual(list(score.segment(offset=0.0, duration=1.0)), [score[0]])
 
     def test_inclusive_left_boundary(self):
-        score = Score([SoundEvent(0.0, {}), SoundEvent(0.5, {})])
+        score = Score([Event(0.0, {}), Event(0.5, {})])
         self.assertEqual(list(score.segment(offset=0.5, duration=1.0)), [score[1]])
 
     def test_no_duration_means_unbounded(self):
-        score = Score(SoundEvent(t, {}) for t in (0.0, 1.0, 100.0))
+        score = Score(Event(t, {}) for t in (0.0, 1.0, 100.0))
         self.assertEqual([e.time for e in score.segment(offset=0.5)], [1.0, 100.0])
 
 
@@ -193,8 +193,8 @@ class TestBasicMetronome(unittest.TestCase):
 
 class TestScoreRender(unittest.TestCase):
     def test_uniform_instrument(self):
-        # _const_tone is an Instrument: takes SoundEvent → returns Audio.
-        score = Score([SoundEvent(0.0, {"value": 0.5, "duration": 0.01})])
+        # _const_tone is an Instrument: takes Event → returns Audio.
+        score = Score([Event(0.0, {"value": 0.5, "duration": 0.01})])
         audio = score.render(_const_tone)
         self.assertEqual(audio.sample_rate, 1000)
         self.assertEqual(audio.num_channels, 1)
@@ -213,8 +213,8 @@ class TestScoreRender(unittest.TestCase):
 
         score = Score(
             [
-                SoundEvent(0.0, {"value": 0.1, "duration": 0.01}),
-                SoundEvent(0.01, {"value": 0.2, "duration": 0.01}),
+                Event(0.0, {"value": 0.1, "duration": 0.01}),
+                Event(0.01, {"value": 0.2, "duration": 0.01}),
             ]
         )
         score.render(dispatch)
@@ -228,13 +228,13 @@ class TestScoreRender(unittest.TestCase):
                 sample_rate=1000,
             )
 
-        score = Score([SoundEvent(0.0, {"value": 0.5, "duration": 0.01})])
+        score = Score([Event(0.0, {"value": 0.5, "duration": 0.01})])
         audio = score.render(lambda e: kwargs_only(**e.kwargs))
         self.assertEqual(audio.num_samples, 10)
         self.assertTrue(np.allclose(audio.samples, 0.5))
 
     def test_single_event_with_offset(self):
-        score = Score([SoundEvent(0.005, {"value": 0.5, "duration": 0.01})])
+        score = Score([Event(0.005, {"value": 0.5, "duration": 0.01})])
         audio = score.render(_const_tone)
         self.assertGreaterEqual(audio.num_samples, 15)
         self.assertTrue(np.all(audio.samples[:5] == 0.0))
@@ -243,8 +243,8 @@ class TestScoreRender(unittest.TestCase):
     def test_non_overlapping(self):
         score = Score(
             [
-                SoundEvent(0.0, {"value": 0.3, "duration": 0.01}),
-                SoundEvent(0.01, {"value": 0.7, "duration": 0.01}),
+                Event(0.0, {"value": 0.3, "duration": 0.01}),
+                Event(0.01, {"value": 0.7, "duration": 0.01}),
             ]
         )
         audio = score.render(_const_tone)
@@ -255,8 +255,8 @@ class TestScoreRender(unittest.TestCase):
     def test_overlapping_events_mix_additively(self):
         score = Score(
             [
-                SoundEvent(0.0, {"value": 0.2, "duration": 0.01}),
-                SoundEvent(0.0, {"value": 0.3, "duration": 0.01}),
+                Event(0.0, {"value": 0.2, "duration": 0.01}),
+                Event(0.0, {"value": 0.3, "duration": 0.01}),
             ]
         )
         audio = score.render(_const_tone)
@@ -266,7 +266,7 @@ class TestScoreRender(unittest.TestCase):
     def test_metronome_converts_ticks(self):
         # 60_000 BPM → 1 tick = 0.001s = 1 sample @ sr=1000.
         m = BasicMetronome(60_000)
-        score = Score([SoundEvent(5.0, {"value": 0.5, "duration": 0.01})])
+        score = Score([Event(5.0, {"value": 0.5, "duration": 0.01})])
         audio = score.render(_const_tone, metronome=m)
         self.assertTrue(np.all(audio.samples[:5] == 0.0))
         self.assertTrue(np.all(audio.samples[5:15] == 0.5))
@@ -274,8 +274,8 @@ class TestScoreRender(unittest.TestCase):
     def test_inconsistent_sample_rates_raises(self):
         score = Score(
             [
-                SoundEvent(0.0, {"value": 0.5, "duration": 0.01, "sample_rate": 1000}),
-                SoundEvent(0.01, {"value": 0.5, "duration": 0.01, "sample_rate": 2000}),
+                Event(0.0, {"value": 0.5, "duration": 0.01, "sample_rate": 1000}),
+                Event(0.01, {"value": 0.5, "duration": 0.01, "sample_rate": 2000}),
             ]
         )
         with self.assertRaises(ValueError) as ctx:
@@ -288,8 +288,8 @@ class TestScoreRender(unittest.TestCase):
 
         score = Score(
             [
-                SoundEvent(0.0, {"value": 0.5, "duration": 0.01}),
-                SoundEvent(0.01, {"value": 0.5, "duration": 0.01}),
+                Event(0.0, {"value": 0.5, "duration": 0.01}),
+                Event(0.01, {"value": 0.5, "duration": 0.01}),
             ]
         )
         with self.assertRaises(ValueError) as ctx:
@@ -300,7 +300,7 @@ class TestScoreRender(unittest.TestCase):
         def _no_sr_instrument(_event):
             return Audio(np.zeros(10, dtype=np.float32))  # no sample_rate
 
-        score = Score([SoundEvent(0.0, {})])
+        score = Score([Event(0.0, {})])
         with self.assertRaises(ValueError):
             score.render(_no_sr_instrument)
 
@@ -309,7 +309,7 @@ class TestScoreRender(unittest.TestCase):
             return 42
 
         with self.assertRaises(TypeError) as ctx:
-            Score([SoundEvent(0.0, {})]).render(bad)
+            Score([Event(0.0, {})]).render(bad)
         self.assertIn("Audio", str(ctx.exception))
 
     def test_empty_score_returns_zero_length_audio(self):
@@ -326,7 +326,7 @@ class TestScoreFromMidi(unittest.TestCase):
         self.assertIsInstance(metronome, MIDIMetronome)
         self.assertGreater(len(score), 0)
         for event in score:
-            self.assertIsInstance(event, SoundEvent)
+            self.assertIsInstance(event, Event)
 
     def test_event_kwargs_have_expected_keys(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)

@@ -9,9 +9,9 @@ from .paths import LIB_DIR
 from .plot import plot, plot_freq, plot_spec
 from .score import (
     BasicMetronome,
+    Event,
     Metronome,
     Score,
-    SoundEvent,
 )
 
 __all__ = [
@@ -19,7 +19,7 @@ __all__ = [
     "BasicMetronome",
     "Metronome",
     "Score",
-    "SoundEvent",
+    "Event",
     "play",
     "plot",
     "plot_freq",
