@@ -137,10 +137,23 @@ class TestScoreProperties(unittest.TestCase):
 
 
 class TestScoreSegment(unittest.TestCase):
-    def test_offset_and_duration(self):
+    def test_offset_and_duration_default_relativizes(self):
+        # Default: event times are shifted so the segment starts at 0.
         score = Score(Event(t, {}) for t in (0.0, 0.5, 1.0, 1.5, 2.0))
         sliced = score.segment(offset=0.5, duration=1.0)
+        self.assertEqual([e.time for e in sliced], [0.0, 0.5])
+
+    def test_relativize_false_preserves_original_times(self):
+        score = Score(Event(t, {}) for t in (0.0, 0.5, 1.0, 1.5, 2.0))
+        sliced = score.segment(offset=0.5, duration=1.0, relativize=False)
         self.assertEqual([e.time for e in sliced], [0.5, 1.0])
+
+    def test_relativize_preserves_kwargs(self):
+        # Only `time` is touched; kwargs (including duration_ticks etc.) stay.
+        score = Score([Event(2.0, {"pitch": 60, "duration": 0.25})])
+        sliced = score.segment(offset=1.0, duration=2.0)
+        self.assertEqual(sliced[0].time, 1.0)
+        self.assertEqual(sliced[0].kwargs, {"pitch": 60, "duration": 0.25})
 
     def test_returns_score(self):
         score = Score([Event(0.0, {}), Event(0.5, {})])
@@ -148,15 +161,18 @@ class TestScoreSegment(unittest.TestCase):
 
     def test_eps_excludes_exact_end(self):
         score = Score([Event(0.0, {}), Event(1.0, {})])
+        # At offset=0 the relativize shift is 0, so the kept event equals the original.
         self.assertEqual(list(score.segment(offset=0.0, duration=1.0)), [score[0]])
 
     def test_inclusive_left_boundary(self):
         score = Score([Event(0.0, {}), Event(0.5, {})])
-        self.assertEqual(list(score.segment(offset=0.5, duration=1.0)), [score[1]])
+        sliced = score.segment(offset=0.5, duration=1.0)
+        self.assertEqual([e.time for e in sliced], [0.0])
 
     def test_no_duration_means_unbounded(self):
+        # Default still relativizes when only offset is given.
         score = Score(Event(t, {}) for t in (0.0, 1.0, 100.0))
-        self.assertEqual([e.time for e in score.segment(offset=0.5)], [1.0, 100.0])
+        self.assertEqual([e.time for e in score.segment(offset=0.5)], [0.5, 99.5])
 
 
 class TestBasicMetronome(unittest.TestCase):
@@ -330,14 +346,25 @@ class TestScoreFromMidi(unittest.TestCase):
 
     def test_event_kwargs_have_expected_keys(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)
-        expected = {"off_tick", "duration", "pitch", "velocity", "program", "is_drum"}
+        expected = {
+            "type",
+            "duration_ticks",
+            "duration",
+            "pitch",
+            "velocity",
+            "program",
+            "is_drum",
+            "channel",
+        }
         for event in score[:50]:
             self.assertEqual(set(event.kwargs.keys()), expected)
+            self.assertEqual(event.kwargs["type"], "note")
 
     def test_kwarg_value_ranges(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)
         for event in score:
             kw = event.kwargs
+            self.assertEqual(kw["type"], "note")
             self.assertGreaterEqual(kw["pitch"], 0)
             self.assertLessEqual(kw["pitch"], 127)
             self.assertGreaterEqual(kw["velocity"], 0)
@@ -346,7 +373,49 @@ class TestScoreFromMidi(unittest.TestCase):
             self.assertLessEqual(kw["program"], 127)
             self.assertIsInstance(kw["is_drum"], bool)
             self.assertGreater(kw["duration"], 0.0)
-            self.assertGreaterEqual(kw["off_tick"], event.time)
+            self.assertGreater(kw["duration_ticks"], 0)
+
+    def test_as_notes_false_emits_raw_note_on_and_note_off(self):
+        score, _ = Score.from_midi(_BOLERO_MIDI, as_notes=False)
+        types = {e.kwargs["type"] for e in score}
+        # Only note_on / note_off in this mode (all_events=False).
+        self.assertEqual(types, {"note_on", "note_off"})
+        # Each event's kwargs should be the raw mido message attributes
+        # (no "duration"/"duration_ticks"/"program"/"is_drum").
+        for event in score[:20]:
+            self.assertIn("note", event.kwargs)
+            self.assertIn("velocity", event.kwargs)
+            self.assertIn("channel", event.kwargs)
+            self.assertNotIn("duration", event.kwargs)
+            self.assertNotIn("duration_ticks", event.kwargs)
+            self.assertNotIn("time", event.kwargs)  # delta-time stripped
+
+    def test_as_notes_false_emits_at_least_twice_as_many_events(self):
+        # Each paired "note" consumes one note_on + one note_off, so the raw
+        # count is at least 2x the paired count (and possibly more if the
+        # file contains stray unmatched note_on / note_off messages).
+        notes, _ = Score.from_midi(_BOLERO_MIDI, as_notes=True)
+        raw, _ = Score.from_midi(_BOLERO_MIDI, as_notes=False)
+        self.assertGreaterEqual(len(raw), 2 * len(notes))
+
+    def test_all_events_true_includes_non_note_events(self):
+        score, _ = Score.from_midi(_BOLERO_MIDI, all_events=True)
+        types = {e.kwargs["type"] for e in score}
+        # "note" should still appear (as_notes=True is the default), and
+        # standard non-note types should also be present in Bolero.
+        self.assertIn("note", types)
+        self.assertIn("set_tempo", types)
+        self.assertIn("program_change", types)
+
+    def test_all_events_with_as_notes_false_emits_only_raw_events(self):
+        score, _ = Score.from_midi(_BOLERO_MIDI, as_notes=False, all_events=True)
+        types = {e.kwargs["type"] for e in score}
+        # No paired "note" events in this mode.
+        self.assertNotIn("note", types)
+        # Raw note events and tempo/program changes should still appear.
+        self.assertIn("note_on", types)
+        self.assertIn("note_off", types)
+        self.assertIn("set_tempo", types)
 
     def test_events_are_sorted_by_time(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)
