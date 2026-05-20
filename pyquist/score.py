@@ -179,22 +179,39 @@ class Score(UserList):
 
     @classmethod
     def from_midi(
-        cls, midi: Union[str, os.PathLike, IO, mido.MidiFile]
+        cls,
+        midi: Union[str, os.PathLike, IO, mido.MidiFile],
+        *,
+        as_notes: bool = True,
+        all_events: bool = False,
     ) -> Tuple["Score", "MIDIMetronome"]:
         """Parses a MIDI file into a ``(score, metronome)`` pair.
 
-        Each note across all tracks becomes one :class:`Event`:
+        Every emitted :class:`Event` has ``time`` set to its absolute MIDI
+        tick and ``kwargs["type"]`` identifying the kind of event. The exact
+        kwargs schema depends on the flags below.
 
-        * ``time`` — the MIDI tick at which the note begins (NOTE_ON).
-        * ``kwargs["off_tick"]`` — the tick at which the note ends.
+        When ``as_notes=True`` (default), each ``note_on``/``note_off`` pair
+        across all tracks is collapsed into a single ``"note"`` event with:
+
+        * ``kwargs["type"]`` — the literal string ``"note"``.
         * ``kwargs["duration"]`` — the note's duration in seconds.
+        * ``kwargs["duration_ticks"]`` — the note's duration in MIDI ticks.
         * ``kwargs["pitch"]`` — MIDI pitch (0–127).
         * ``kwargs["velocity"]`` — MIDI NOTE_ON velocity (0–127).
-        * ``kwargs["program"]`` — MIDI program number (0–127), reflecting
-          the most recent ``program_change`` on the same channel of the
-          same track.
+        * ``kwargs["program"]`` — MIDI program (instrument) number (0–127).
         * ``kwargs["is_drum"]`` — ``True`` if the note is on MIDI channel
           10 (zero-indexed: 9), the conventional percussion channel.
+        * ``kwargs["channel"]`` — MIDI channel (0-15).
+
+        When ``as_notes=False``, raw ``"note_on"`` and ``"note_off"`` events
+        are emitted as separate :class:`Event`\\ s instead — each with
+        ``kwargs`` equal to the underlying ``mido`` message's attributes
+        (including ``"type"``) sans its delta-``time`` field.
+
+        When ``all_events=True``, all other MIDI messages (tempo changes,
+        program changes, control changes, ...) are also emitted with the
+        same barebones ``msg.dict()``-style kwargs.
 
         Pass the returned ``metronome`` to :meth:`render` so ticks are
         converted to seconds using the file's actual tempo map.
@@ -202,10 +219,18 @@ class Score(UserList):
         Args:
             midi: A path, a file-like object, or an already-parsed
                 :class:`mido.MidiFile`.
+            as_notes: If ``True`` (default), collapse ``note_on``/``note_off``
+                pairs into a single ``"note"`` event. If ``False``, emit them
+                as separate events.
+            all_events: If ``True``, also emit non-note MIDI messages
+                (``set_tempo``, ``program_change``, ``control_change``, ...).
+                Defaults to ``False`` (note events only).
         """
         mid = _load_midi(midi)
         metronome = MIDIMetronome(mid)
-        events = _parse_midi_notes(mid, metronome)
+        events = _parse_midi_events(
+            mid, metronome, as_notes=as_notes, all_events=all_events
+        )
         events.sort(key=lambda e: e.time)
         return cls(events), metronome
 
@@ -214,6 +239,7 @@ class Score(UserList):
         *,
         offset: float = 0.0,
         duration: Optional[float] = None,
+        relativize: bool = True,
     ) -> "Score":
         """Returns the events whose ``time`` falls in ``[offset, offset+duration)``.
 
@@ -224,9 +250,15 @@ class Score(UserList):
             offset: Lower bound on event time (inclusive). Defaults to ``0.0``.
             duration: Length of the window. If ``None`` (default), no upper
                 bound is applied.
+            relativize: If ``True`` (default), shift every kept event's
+                ``time`` by ``-offset`` so the returned score begins at 0.
+                If ``False``, keep the original timestamps.
         """
         end = float("inf") if duration is None else offset + duration - _SEGMENT_EPS
-        return type(self)(e for e in self if offset <= e.time < end)
+        shift = offset if relativize else 0.0
+        return type(self)(
+            e._replace(time=e.time - shift) for e in self if offset <= e.time < end
+        )
 
     def render(
         self,
@@ -390,8 +422,18 @@ class MIDIMetronome(Metronome):
         )
 
 
-def _parse_midi_notes(mid: mido.MidiFile, metronome: "MIDIMetronome") -> List[Event]:
-    """Walks all tracks, pairing note_on/note_off into Events."""
+def _parse_midi_events(
+    mid: mido.MidiFile,
+    metronome: "MIDIMetronome",
+    *,
+    as_notes: bool = True,
+    all_events: bool = False,
+) -> List[Event]:
+    """Walks all tracks and converts MIDI messages to :class:`Event`\\ s.
+
+    See :meth:`Score.from_midi` for the semantics of ``as_notes`` and
+    ``all_events``.
+    """
     events: List[Event] = []
     for track in mid.tracks:
         abs_tick = 0
@@ -404,36 +446,51 @@ def _parse_midi_notes(mid: mido.MidiFile, metronome: "MIDIMetronome") -> List[Ev
 
         for msg in track:
             abs_tick += msg.time
+            is_note_on = msg.type == "note_on" and msg.velocity > 0
+            is_note_off = msg.type == "note_off" or (
+                msg.type == "note_on" and msg.velocity == 0
+            )
+            is_note = is_note_on or is_note_off
+
             if msg.type == "program_change":
                 programs[msg.channel] = msg.program
-            elif msg.type == "note_on" and msg.velocity > 0:
-                active[(msg.channel, msg.note)] = (
-                    abs_tick,
-                    msg.velocity,
-                    programs.get(msg.channel, 0),
-                )
-            elif msg.type == "note_off" or (
-                msg.type == "note_on" and msg.velocity == 0
-            ):
-                key = (msg.channel, msg.note)
-                if key not in active:
-                    continue  # Stray note_off; skip silently.
-                on_tick, velocity, program = active.pop(key)
-                off_tick = abs_tick
-                duration = metronome.tick_to_seconds(
-                    off_tick
-                ) - metronome.tick_to_seconds(on_tick)
-                events.append(
-                    Event(
-                        time=on_tick,
-                        kwargs={
-                            "off_tick": off_tick,
-                            "duration": duration,
-                            "pitch": msg.note,
-                            "velocity": velocity,
-                            "program": program,
-                            "is_drum": msg.channel == 9,
-                        },
+
+            if is_note and as_notes:
+                # Pair note_on/note_off into a single "note" event.
+                if is_note_on:
+                    active[(msg.channel, msg.note)] = (
+                        abs_tick,
+                        msg.velocity,
+                        programs.get(msg.channel, 0),
                     )
-                )
+                else:  # is_note_off
+                    key = (msg.channel, msg.note)
+                    if key not in active:
+                        continue  # Stray note_off; skip silently.
+                    on_tick, velocity, program = active.pop(key)
+                    off_tick = abs_tick
+                    duration = metronome.tick_to_seconds(
+                        off_tick
+                    ) - metronome.tick_to_seconds(on_tick)
+                    events.append(
+                        Event(
+                            time=on_tick,
+                            kwargs={
+                                "type": "note",
+                                "duration": duration,
+                                "duration_ticks": off_tick - on_tick,
+                                "pitch": msg.note,
+                                "velocity": velocity,
+                                "program": program,
+                                "is_drum": msg.channel == 9,
+                                "channel": msg.channel,
+                            },
+                        )
+                    )
+            elif (is_note and not as_notes) or (not is_note and all_events):
+                # Barebones path: kwargs = msg attributes (sans delta-time).
+                # ``msg.dict()`` already includes a ``"type"`` field.
+                kwargs = msg.dict()
+                kwargs.pop("time", None)
+                events.append(Event(time=abs_tick, kwargs=kwargs))
     return events
