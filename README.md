@@ -4,7 +4,7 @@
 
 `pyquist` is **designed for learning** and is the teaching library for CMU's 15-322 Intro to Computer Music. Its primary purpose is to provide a _barebones foundation_ for working with audio in Python, e.g., allocating sample buffers, audio file decoding and playback. Accordingly, it intentionally lacks a lot of functionality found in full-fledged computer music programming frameworks, such as a rich collection of unit generators.
 
-Want to try it without installing anything? [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1FUz-vds-pGz--SrzDsW0vhDi3pePnrWq?usp=sharing)
+Want to try it without installing anything? [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb)
 
 ## Quick example
 
@@ -52,7 +52,7 @@ score = Score([
 pq.play(score.render(sine_instrument, metronome=BasicMetronome(120)))
 ```
 
-For a guided walkthrough — visualization, MIDI parsing, scores, instruments — open [`examples/HelloPyquist.ipynb`](examples/HelloPyquist.ipynb) or [run it in Colab](https://colab.research.google.com/drive/1FUz-vds-pGz--SrzDsW0vhDi3pePnrWq?usp=sharing).
+For a guided walkthrough — visualization, MIDI parsing, scores, instruments — open [`examples/HelloPyquist.ipynb`](examples/HelloPyquist.ipynb) or [run it in Colab](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb).
 
 ## Installation
 

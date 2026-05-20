@@ -9,7 +9,7 @@ for CMU's 15-322 *Intro to Computer Music*.
 * Hands-on walkthrough:
   `HelloPyquist notebook <https://github.com/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_
   (or `run it in Colab
-  <https://colab.research.google.com/drive/1FUz-vds-pGz--SrzDsW0vhDi3pePnrWq?usp=sharing>`_
+  <https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_
   without installing anything)
 
 This site is the auto-generated API reference.
