@@ -12,7 +12,7 @@ metronome is kept as a separate object (a :class:`Metronome` instance) and
 passed explicitly to :meth:`Score.render` when needed.
 
 To turn a ``Score`` into audio, call :meth:`Score.render` with an
-:class:`Instrument` — a callable taking a :class:`Event` and returning
+:class:`Instrument` — a callable taking an :class:`Event` and returning
 :class:`Audio`. For per-event dispatch (e.g. different sounds for drums vs.
 pitched notes), just branch inside the instrument::
 
@@ -79,7 +79,7 @@ class Event(NamedTuple):
     kwargs: _KwargsDict
 
 
-# A callable that takes a Event and returns its rendered Audio.
+# A callable that takes an Event and returns its rendered Audio.
 Instrument: TypeAlias = Callable[[Event], Audio]
 
 

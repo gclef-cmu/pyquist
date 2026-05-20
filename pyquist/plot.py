@@ -21,38 +21,6 @@ from .helper import amplitude_to_db
 NFFT_MAX = 1 << 16
 
 
-def _stft(
-    samples: np.ndarray,
-    *,
-    n_fft: int,
-    hop_length: int,
-    window: str,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Real-valued short-time Fourier transform — pedagogical, ~10 lines.
-
-    Slides a ``window``-shaped chunk across ``samples`` in ``hop_length``-sample
-    steps, applies the window, and takes :func:`np.fft.rfft` of each chunk.
-    Trailing samples that don't fill a full frame are dropped (no zero
-    padding). Callers should have ensured ``len(samples) >= n_fft`` upstream.
-
-    Returns ``(frame_starts, Z)`` where:
-
-    * ``frame_starts`` — sample index at the start of each frame, shape ``(n_frames,)``.
-    * ``Z`` — complex coefficients, shape ``(n_fft // 2 + 1, n_frames)``.
-    """
-    if window != "hann":
-        raise ValueError(f"Unsupported window: {window!r}. Only 'hann' is implemented.")
-    win = np.hanning(n_fft).astype(samples.dtype, copy=False)
-
-    n_frames = 1 + (len(samples) - n_fft) // hop_length
-    frame_starts = np.arange(n_frames) * hop_length
-    bins = n_fft // 2 + 1
-    z = np.empty((bins, n_frames), dtype=np.complex64)
-    for i, start in enumerate(frame_starts):
-        z[:, i] = np.fft.rfft(samples[start : start + n_fft] * win)
-    return frame_starts, z
-
-
 def plot(
     audio: Audio,
     *,
@@ -226,7 +194,6 @@ def plot_spec(
     duration: Optional[float] = None,
     n_fft: int = 2048,
     hop_length: int = 512,
-    window: str = "hann",
     log_frequency: bool = True,
     log_amplitude: bool = True,
     dynamic_range_db: float = 80.0,
@@ -236,9 +203,10 @@ def plot_spec(
 ) -> matplotlib.axes.Axes:
     """Plots a magnitude spectrogram of an Audio.
 
-    Multi-channel audio is first mixed to mono. The STFT uses the given
-    window and overlap; magnitudes are optionally converted to dB and
-    plotted on a log-frequency axis (both defaults).
+    Multi-channel audio is first mixed to mono. A Hann-windowed STFT with
+    ``n_fft`` window size and ``hop_length`` frame advance is computed;
+    magnitudes are optionally converted to dB and plotted on a log-frequency
+    axis (both defaults).
 
     Args:
         audio: The audio to analyze. Must have a ``sample_rate``.
@@ -246,7 +214,6 @@ def plot_spec(
         duration: Length to analyze in seconds. Defaults to the rest of the audio.
         n_fft: STFT window size in samples. Defaults to 2048 (~46 ms at 44.1 kHz).
         hop_length: Frame advance in samples. Defaults to 512 (75% overlap).
-        window: Window function. Only ``"hann"`` is currently supported.
         log_frequency: If True (default), the y-axis uses a log scale.
         log_amplitude: If True (default), magnitudes are converted to dB
             (via :func:`pyquist.helper.amplitude_to_db`).
@@ -274,15 +241,16 @@ def plot_spec(
             f"which is shorter than n_fft={n_fft}. "
             f"Use a smaller n_fft or a longer duration."
         )
-    frame_starts, zxx = _stft(
-        seg.samples[:, 0],
-        n_fft=n_fft,
-        hop_length=hop_length,
-        window=window,
+    samples = seg.samples[:, 0]
+    win = np.hanning(n_fft).astype(samples.dtype)
+    frames = [
+        np.fft.rfft(samples[i : i + n_fft] * win)
+        for i in range(0, len(samples) - n_fft + 1, hop_length)
+    ]
+    zxx = np.stack(frames, axis=1)
+    t = np.arange(len(frames)) * hop_length / audio.sample_rate + max(
+        0.0, offset or 0.0
     )
-    # Time axis: place each frame at its center (start + n_fft/2) for visual
-    # accuracy, then shift by the segment's offset into the original audio.
-    t = (frame_starts + n_fft / 2) / audio.sample_rate + max(0.0, offset or 0.0)
     f = np.fft.rfftfreq(n_fft, d=1.0 / audio.sample_rate)
 
     magnitude = np.abs(zxx)

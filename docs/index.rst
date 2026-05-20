@@ -5,13 +5,14 @@ Pyquist documentation
 in Python and NumPy**. It is designed for learning and is the teaching library
 for CMU's 15-322 *Intro to Computer Music*.
 
-For a hands-on walkthrough, see the
-`HelloPyquist notebook
-<https://github.com/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_,
-or run it `in Colab
-<https://colab.research.google.com/drive/1FUz-vds-pGz--SrzDsW0vhDi3pePnrWq?usp=sharing>`_
-without installing anything. This site itself is the auto-generated API
-reference.
+* Source code: https://github.com/gclef-cmu/pyquist
+* Hands-on walkthrough:
+  `HelloPyquist notebook <https://github.com/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_
+  (or `run it in Colab
+  <https://colab.research.google.com/drive/1FUz-vds-pGz--SrzDsW0vhDi3pePnrWq?usp=sharing>`_
+  without installing anything)
+
+This site is the auto-generated API reference.
 
 
 Installation
