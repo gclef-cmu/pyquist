@@ -366,6 +366,14 @@ class Audio:
     # --- numpy interop ------------------------------------------------------
 
     def __array__(self, dtype=None, copy=None) -> np.ndarray:
+        """NumPy's "convert to ndarray" hook.
+
+        Lets ``Audio`` be passed transparently to any function that calls
+        ``np.asarray(...)`` internally (``np.mean``, ``np.fft.rfft``,
+        ``matplotlib.plot``, ...). Returns the underlying samples by
+        reference on the fast path; copies only when the caller requests
+        a dtype change or ``copy=True``.
+        """
         if dtype is None and not copy:
             return self._samples
         return self._samples.astype(dtype if dtype is not None else self._samples.dtype)
