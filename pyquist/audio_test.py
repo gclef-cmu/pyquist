@@ -268,25 +268,67 @@ class TestAudio(unittest.TestCase):
         audio.clear()
         self.assertEqual(audio.peak_amplitude, 0.0)
 
-    def test_indexing_and_len(self):
+    def test_indexing_returns_audio_for_valid_patterns(self):
         audio = Audio(np.arange(20, dtype=np.float32).reshape(10, 2), sample_rate=44100)
         self.assertEqual(len(audio), 10)
 
-        # Read returns ndarray view
-        sliced = audio[:5]
-        self.assertIsInstance(sliced, np.ndarray)
-        self.assertEqual(sliced.shape, (5, 2))
+        # Sample slice: 2-D result, both axes preserved.
+        sliced = audio[1:5]
+        self.assertIsInstance(sliced, Audio)
+        self.assertEqual(sliced.shape, (4, 2))
+        self.assertEqual(sliced.sample_rate, 44100)
 
-        # Single-channel slice is 1D ndarray
+        # Single-channel slice via int on axis 1: Audio shaped (n, 1).
         ch0 = audio[:, 0]
-        self.assertIsInstance(ch0, np.ndarray)
-        self.assertEqual(ch0.shape, (10,))
+        self.assertIsInstance(ch0, Audio)
+        self.assertEqual(ch0.shape, (10, 1))
 
-        # Setitem works
+        # Both axes sliced.
+        both = audio[2:6, 0:1]
+        self.assertIsInstance(both, Audio)
+        self.assertEqual(both.shape, (4, 1))
+
+        # Length-1 slice is the way to spell "single sample as Audio".
+        one = audio[3:4]
+        self.assertIsInstance(one, Audio)
+        self.assertEqual(one.shape, (1, 2))
+        self.assertTrue(np.array_equal(one.samples, [[6.0, 7.0]]))
+
+    def test_indexing_axis_0_with_int_raises(self):
+        audio = Audio(np.arange(20, dtype=np.float32).reshape(10, 2), sample_rate=44100)
+        # Bare int.
+        with self.assertRaises(TypeError) as ctx:
+            audio[3]
+        self.assertIn("audio.samples", str(ctx.exception))
+        # Negative bare int.
+        with self.assertRaises(TypeError):
+            audio[-1]
+        # Two-int tuple (scalar read).
+        with self.assertRaises(TypeError):
+            audio[0, 0]
+        # Int on axis 0, slice on axis 1.
+        with self.assertRaises(TypeError):
+            audio[3, :]
+        # The recommended raw-numpy access still works.
+        self.assertEqual(audio.samples[0, 0], 0.0)
+        self.assertEqual(audio.samples[3, 1], 7.0)
+
+    def test_indexing_returns_view_when_possible(self):
+        # Basic slicing should return a view of the underlying samples, so
+        # mutating the returned Audio's samples writes through to the parent.
+        audio = Audio(np.zeros((10, 2), dtype=np.float32), sample_rate=44100)
+        sliced = audio[2:5]
+        sliced.samples[:] = 1.0
+        self.assertTrue(np.all(audio.samples[2:5, :] == 1.0))
+        self.assertTrue(np.all(audio.samples[0:2, :] == 0.0))
+
+    def test_setitem_and_inplace_ops(self):
+        # __setitem__ is unrestricted (writes don't have the dim-collapse
+        # ambiguity that reads do).
+        audio = Audio(np.zeros((10, 2), dtype=np.float32), sample_rate=44100)
         audio[0:2, :] = 99.0
         self.assertTrue(np.all(audio.samples[0:2, :] == 99.0))
-
-        # In-place ops on slices flow through to underlying samples
+        # In-place ops on slices flow through to underlying samples.
         audio[2:4, :] = 2.0
         audio[2:4, :] *= 0.5
         self.assertTrue(np.all(audio.samples[2:4, :] == 1.0))

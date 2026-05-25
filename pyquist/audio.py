@@ -365,18 +365,45 @@ class Audio:
 
     # --- numpy interop ------------------------------------------------------
 
-    def __array__(self, dtype=None) -> np.ndarray:
-        if dtype is None:
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
+        if dtype is None and not copy:
             return self._samples
-        return self._samples.astype(dtype)
+        return self._samples.astype(dtype if dtype is not None else self._samples.dtype)
 
     # --- Indexing / length --------------------------------------------------
 
     def __len__(self) -> int:
         return self.num_samples
 
-    def __getitem__(self, key):
-        return self._samples[key]
+    def __getitem__(self, key) -> "Audio":
+        """Returns a new ``Audio`` wrapping the indexed samples.
+
+        Only patterns that preserve the ``(num_samples, num_channels)``
+        layout are accepted — i.e., the sample axis (axis 0) must be
+        sliced, not collapsed to a single int. Examples (``audio`` has
+        shape ``(10000, 2)``)::
+
+            audio[1000:2000]       # → Audio with shape (1000, 2)
+            audio[:, 0]            # → Audio with shape (10000, 1)
+            audio[1000:2000, 1:3]  # → Audio with shape (1000, 2)
+
+        Indexing axis 0 with a single ``int`` (``audio[1000]``,
+        ``audio[0, 0]``) is rejected with ``TypeError`` — it's ambiguous
+        as Audio, and almost always either a scalar read (use
+        ``audio.samples[i, j]``) or a length-1 slice (use
+        ``audio[i:i+1]``).
+
+        The returned ``Audio`` is a view of the underlying samples when
+        the key supports it, and carries the same ``sample_rate``.
+        """
+        first = key[0] if isinstance(key, tuple) and key else key
+        if isinstance(first, (int, np.integer)):
+            raise TypeError(
+                f"Audio[...] does not support indexing the sample axis with "
+                f"a single int (got {key!r}). Use audio.samples[...] for raw "
+                f"numpy access, or audio[i:i+1] for a length-1 Audio."
+            )
+        return Audio(self._samples[key], sample_rate=self._sample_rate)
 
     def __setitem__(self, key, value) -> None:
         self._samples[key] = value
