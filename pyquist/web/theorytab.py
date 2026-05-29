@@ -388,11 +388,11 @@ if __name__ == "__main__":
         )
         return Audio(samples, sample_rate=sample_rate)
 
-    def _melody(event):
-        return _osc(**event.kwargs, dbfs=-12)
+    def _melody(**kwargs):
+        return _osc(**kwargs, dbfs=-12)
 
-    def _harmony(event):
-        return _osc(**event.kwargs, dbfs=-18)
+    def _harmony(**kwargs):
+        return _osc(**kwargs, dbfs=-18)
 
     # Grab the score and render each part with its own instrument, then mix.
     metronome, melody, harmony = fetch_theorytab(sys.argv[1])

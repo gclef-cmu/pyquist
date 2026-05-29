@@ -15,27 +15,17 @@ from .score import (
 _BOLERO_MIDI = TEST_DATA_DIR / "ravel_bolero.mid"
 
 
-def _const_tone(event: Event) -> Audio:
-    """Test instrument: returns a flat-amplitude audio of ``event.kwargs['duration']`` seconds."""
-    sample_rate = event.kwargs.get("sample_rate", 1000)
+def _const_tone(duration, value, sample_rate=1000, **kwargs) -> Audio:
+    """Test instrument: returns a flat-amplitude audio of ``duration`` seconds."""
     return Audio(
-        np.full(
-            int(event.kwargs["duration"] * sample_rate),
-            event.kwargs["value"],
-            dtype=np.float32,
-        ),
+        np.full(int(duration * sample_rate), value, dtype=np.float32),
         sample_rate=sample_rate,
     )
 
 
-def _stereo_tone(event: Event) -> Audio:
-    sample_rate = event.kwargs.get("sample_rate", 1000)
+def _stereo_tone(duration, value, sample_rate=1000, **kwargs) -> Audio:
     return Audio(
-        np.full(
-            (int(event.kwargs["duration"] * sample_rate), 2),
-            event.kwargs["value"],
-            dtype=np.float32,
-        ),
+        np.full((int(duration * sample_rate), 2), value, dtype=np.float32),
         sample_rate=sample_rate,
     )
 
@@ -209,7 +199,7 @@ class TestBasicMetronome(unittest.TestCase):
 
 class TestScoreRender(unittest.TestCase):
     def test_uniform_instrument(self):
-        # _const_tone is an Instrument: takes Event → returns Audio.
+        # _const_tone is an Instrument: called with **event.kwargs → Audio.
         score = Score([Event(0.0, {"value": 0.5, "duration": 0.01})])
         audio = score.render(_const_tone)
         self.assertEqual(audio.sample_rate, 1000)
@@ -219,13 +209,14 @@ class TestScoreRender(unittest.TestCase):
 
     def test_per_event_dispatch_inside_instrument(self):
         # Per-event dispatch is just a branch inside the instrument — no
-        # separate factory concept needed.
+        # separate factory concept needed. The deciding kwarg is captured as
+        # a named parameter; the rest flow through via **kwargs.
         captured: list[tuple[str, float]] = []
 
-        def dispatch(event):
-            tag = "loud" if event.time >= 0.005 else "quiet"
-            captured.append((tag, event.kwargs["value"]))
-            return _const_tone(event)
+        def dispatch(value, **kwargs):
+            tag = "loud" if value >= 0.15 else "quiet"
+            captured.append((tag, value))
+            return _const_tone(value=value, **kwargs)
 
         score = Score(
             [
@@ -236,18 +227,32 @@ class TestScoreRender(unittest.TestCase):
         score.render(dispatch)
         self.assertEqual(captured, [("quiet", 0.1), ("loud", 0.2)])
 
-    def test_kwargs_style_via_lambda_wrap(self):
-        # Existing **kwargs-style functions adapt with a one-line lambda.
-        def kwargs_only(**kw):
+    def test_kwargs_style_instrument_passed_directly(self):
+        # A **kwargs-style function is the native instrument form — no
+        # wrapping needed; render calls it as instrument(**event.kwargs).
+        def kwargs_only(duration, value, **kw):
             return Audio(
-                np.full(int(kw["duration"] * 1000), kw["value"], dtype=np.float32),
+                np.full(int(duration * 1000), value, dtype=np.float32),
                 sample_rate=1000,
             )
 
         score = Score([Event(0.0, {"value": 0.5, "duration": 0.01})])
-        audio = score.render(lambda e: kwargs_only(**e.kwargs))
+        audio = score.render(kwargs_only)
         self.assertEqual(audio.num_samples, 10)
         self.assertTrue(np.allclose(audio.samples, 0.5))
+
+    def test_instrument_missing_kwargs_sink_raises_on_extra_keys(self):
+        # An instrument without a **kwargs sink raises TypeError when the
+        # event carries keys it doesn't declare (e.g. from_midi's rich kwargs).
+        def strict(duration, value):
+            return Audio(
+                np.full(int(duration * 1000), value, dtype=np.float32),
+                sample_rate=1000,
+            )
+
+        score = Score([Event(0.0, {"value": 0.5, "duration": 0.01, "extra": 1})])
+        with self.assertRaises(TypeError):
+            score.render(strict)
 
     def test_single_event_with_offset(self):
         score = Score([Event(0.005, {"value": 0.5, "duration": 0.01})])
@@ -299,13 +304,13 @@ class TestScoreRender(unittest.TestCase):
         self.assertIn("sample rate", str(ctx.exception).lower())
 
     def test_inconsistent_channel_counts_raises(self):
-        def dispatch(event):
-            return _stereo_tone(event) if event.time >= 0.005 else _const_tone(event)
+        def dispatch(stereo, **kwargs):
+            return _stereo_tone(**kwargs) if stereo else _const_tone(**kwargs)
 
         score = Score(
             [
-                Event(0.0, {"value": 0.5, "duration": 0.01}),
-                Event(0.01, {"value": 0.5, "duration": 0.01}),
+                Event(0.0, {"value": 0.5, "duration": 0.01, "stereo": False}),
+                Event(0.01, {"value": 0.5, "duration": 0.01, "stereo": True}),
             ]
         )
         with self.assertRaises(ValueError) as ctx:
@@ -313,7 +318,7 @@ class TestScoreRender(unittest.TestCase):
         self.assertIn("channel", str(ctx.exception).lower())
 
     def test_missing_sample_rate_raises(self):
-        def _no_sr_instrument(_event):
+        def _no_sr_instrument(**kwargs):
             return Audio(np.zeros(10, dtype=np.float32))  # no sample_rate
 
         score = Score([Event(0.0, {})])
@@ -321,7 +326,7 @@ class TestScoreRender(unittest.TestCase):
             score.render(_no_sr_instrument)
 
     def test_invalid_return_type_raises(self):
-        def bad(_event):
+        def bad(**kwargs):
             return 42
 
         with self.assertRaises(TypeError) as ctx:
@@ -347,7 +352,7 @@ class TestScoreFromMidi(unittest.TestCase):
     def test_event_kwargs_have_expected_keys(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)
         expected = {
-            "type",
+            "mtype",
             "duration_ticks",
             "duration",
             "pitch",
@@ -358,13 +363,13 @@ class TestScoreFromMidi(unittest.TestCase):
         }
         for event in score[:50]:
             self.assertEqual(set(event.kwargs.keys()), expected)
-            self.assertEqual(event.kwargs["type"], "note")
+            self.assertEqual(event.kwargs["mtype"], "note")
 
     def test_kwarg_value_ranges(self):
         score, _ = Score.from_midi(_BOLERO_MIDI)
         for event in score:
             kw = event.kwargs
-            self.assertEqual(kw["type"], "note")
+            self.assertEqual(kw["mtype"], "note")
             self.assertGreaterEqual(kw["pitch"], 0)
             self.assertLessEqual(kw["pitch"], 127)
             self.assertGreaterEqual(kw["velocity"], 0)
@@ -377,7 +382,7 @@ class TestScoreFromMidi(unittest.TestCase):
 
     def test_as_notes_false_emits_raw_note_on_and_note_off(self):
         score, _ = Score.from_midi(_BOLERO_MIDI, as_notes=False)
-        types = {e.kwargs["type"] for e in score}
+        types = {e.kwargs["mtype"] for e in score}
         # Only note_on / note_off in this mode (all_events=False).
         self.assertEqual(types, {"note_on", "note_off"})
         # Each event's kwargs should be the raw mido message attributes
@@ -400,7 +405,7 @@ class TestScoreFromMidi(unittest.TestCase):
 
     def test_all_events_true_includes_non_note_events(self):
         score, _ = Score.from_midi(_BOLERO_MIDI, all_events=True)
-        types = {e.kwargs["type"] for e in score}
+        types = {e.kwargs["mtype"] for e in score}
         # "note" should still appear (as_notes=True is the default), and
         # standard non-note types should also be present in Bolero.
         self.assertIn("note", types)
@@ -409,7 +414,7 @@ class TestScoreFromMidi(unittest.TestCase):
 
     def test_all_events_with_as_notes_false_emits_only_raw_events(self):
         score, _ = Score.from_midi(_BOLERO_MIDI, as_notes=False, all_events=True)
-        types = {e.kwargs["type"] for e in score}
+        types = {e.kwargs["mtype"] for e in score}
         # No paired "note" events in this mode.
         self.assertNotIn("note", types)
         # Raw note events and tempo/program changes should still appear.
