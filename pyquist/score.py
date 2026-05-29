@@ -287,11 +287,9 @@ class Score(UserList):
 
         The instrument is time-agnostic: it receives only the event's
         ``kwargs``, not its ``time``. To vary an instrument by onset, copy
-        the time into ``kwargs`` when building the score.
-
-        For per-event dispatch (e.g. different instruments for drums vs.
-        pitched notes), branch inside the instrument — there is no
-        separate "factory" concept.
+        the time into ``kwargs`` when building the score. For per-event
+        dispatch (e.g. different instruments for drums vs. pitched notes),
+        branch inside the instrument.
 
         All instrument outputs must share a ``sample_rate`` and a
         ``num_channels``; otherwise ``ValueError`` is raised. An empty
