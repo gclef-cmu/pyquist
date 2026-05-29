@@ -32,16 +32,16 @@ clip = riff.segment(offset=5.0, duration=3.0).resample(8000)
 pq.play(clip)
 ```
 
-Rendering a `Score` with a custom instrument:
+Rendering a `Score` with a custom instrument. An instrument is called as `instrument(**event.kwargs)` — declare the kwargs you use and absorb the rest with `**kwargs`:
 
 ```python
 from pyquist.score import Score, Event, BasicMetronome
 from pyquist.helper import pitch_to_frequency
 
-def sine_instrument(event):
+def sine_instrument(pitch, duration, **kwargs):
     sr = 44100
-    t = np.arange(int(event.kwargs["duration"] * sr)) / sr
-    freq = pitch_to_frequency(event.kwargs["pitch"])
+    t = np.arange(int(duration * sr)) / sr
+    freq = pitch_to_frequency(pitch)
     return pq.Audio(0.3 * np.sin(2 * np.pi * freq * t) * np.exp(-3 * t), sample_rate=sr)
 
 score = Score([

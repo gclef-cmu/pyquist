@@ -12,18 +12,24 @@ metronome is kept as a separate object (a :class:`Metronome` instance) and
 passed explicitly to :meth:`Score.render` when needed.
 
 To turn a ``Score`` into audio, call :meth:`Score.render` with an
-:class:`Instrument` — a callable taking an :class:`Event` and returning
-:class:`Audio`. For per-event dispatch (e.g. different sounds for drums vs.
-pitched notes), just branch inside the instrument::
+:class:`Instrument` — a callable invoked as ``instrument(**event.kwargs)``
+that returns :class:`Audio`. An instrument simply declares the kwargs it
+cares about and absorbs the rest with ``**kwargs``::
 
-    def my_instrument(event):
-        if event.kwargs.get("is_drum"):
-            return drum_kit(event)
-        return piano(event)
+    def sine(pitch, duration, **kwargs):
+        ...
+        return Audio(samples, sample_rate=sr)
 
-Existing ``**kwargs``-style functions adapt with a one-line lambda::
+For per-event dispatch (e.g. different sounds for drums vs. pitched notes),
+capture the deciding key as a named parameter and forward the rest::
 
-    score.render(lambda event: my_kwargs_instrument(**event.kwargs))
+    def my_instrument(is_drum, **kwargs):
+        if is_drum:
+            return drum_kit(**kwargs)
+        return sine(**kwargs)
+
+Because instruments are called with ``**event.kwargs``, every kwargs key
+should be a valid Python identifier.
 
 Common "tick" units:
 
@@ -68,7 +74,9 @@ class Event(NamedTuple):
     ``time`` is in seconds when the score is rendered without a metronome,
     or in ticks (whatever unit the metronome maps to seconds — beats, MIDI
     ticks, ...) when a metronome is supplied. ``kwargs`` is opaque to the
-    score; it is forwarded to the instrument at render time.
+    score; it is forwarded to the instrument as ``instrument(**kwargs)`` at
+    render time, so every key should be a valid Python identifier (e.g.,
+    avoid dashes).
 
     ``Event`` is a ``NamedTuple``: it unpacks like a regular tuple
     (``time, kwargs = event``), can be constructed positionally
@@ -79,8 +87,10 @@ class Event(NamedTuple):
     kwargs: _KwargsDict
 
 
-# A callable that takes an Event and returns its rendered Audio.
-Instrument: TypeAlias = Callable[[Event], Audio]
+# A callable invoked as ``instrument(**event.kwargs)`` that returns the
+# rendered Audio for one event. Declare the kwargs you use and absorb the
+# rest with ``**kwargs``.
+Instrument: TypeAlias = Callable[..., Audio]
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +198,13 @@ class Score(UserList):
         """Parses a MIDI file into a ``(score, metronome)`` pair.
 
         Every emitted :class:`Event` has ``time`` set to its absolute MIDI
-        tick and ``kwargs["type"]`` identifying the kind of event. The exact
-        kwargs schema depends on the flags below.
+        tick and ``kwargs["mtype"]`` (message type) identifying the kind of
+        event. The exact kwargs schema depends on the flags below.
 
         When ``as_notes=True`` (default), each ``note_on``/``note_off`` pair
         across all tracks is collapsed into a single ``"note"`` event with:
 
-        * ``kwargs["type"]`` — the literal string ``"note"``.
+        * ``kwargs["mtype"]`` — the literal string ``"note"``.
         * ``kwargs["duration"]`` — the note's duration in seconds.
         * ``kwargs["duration_ticks"]`` — the note's duration in MIDI ticks.
         * ``kwargs["pitch"]`` — MIDI pitch (0–127).
@@ -207,7 +217,8 @@ class Score(UserList):
         When ``as_notes=False``, raw ``"note_on"`` and ``"note_off"`` events
         are emitted as separate :class:`Event`\\ s instead — each with
         ``kwargs`` equal to the underlying ``mido`` message's attributes
-        (including ``"type"``) sans its delta-``time`` field.
+        (with ``"type"`` renamed to ``"mtype"``) sans its delta-``time``
+        field.
 
         When ``all_events=True``, all other MIDI messages (tempo changes,
         program changes, control changes, ...) are also emitted with the
@@ -269,10 +280,14 @@ class Score(UserList):
     ) -> Audio:
         """Renders this score to a single mixed :class:`Audio`.
 
-        Each event is rendered by calling ``instrument(event)`` and mixed
-        in at its onset time. Onsets are interpreted as ticks (and
+        Each event is rendered by calling ``instrument(**event.kwargs)`` and
+        mixed in at its onset time. Onsets are interpreted as ticks (and
         converted via ``metronome.tick_to_seconds``) when a metronome is
         given, otherwise as seconds.
+
+        The instrument is time-agnostic: it receives only the event's
+        ``kwargs``, not its ``time``. To vary an instrument by onset, copy
+        the time into ``kwargs`` when building the score.
 
         For per-event dispatch (e.g. different instruments for drums vs.
         pitched notes), branch inside the instrument — there is no
@@ -287,10 +302,10 @@ class Score(UserList):
 
         rendered: List[Tuple[float, Audio]] = []
         for event in self:
-            audio = instrument(event)
+            audio = instrument(**event.kwargs)
             if not isinstance(audio, Audio):
                 raise TypeError(
-                    f"instrument(event) must return an Audio; "
+                    f"instrument(**event.kwargs) must return an Audio; "
                     f"got {type(audio).__name__}."
                 )
             seconds = (
@@ -477,7 +492,7 @@ def _parse_midi_events(
                         Event(
                             time=on_tick,
                             kwargs={
-                                "type": "note",
+                                "mtype": "note",
                                 "duration": duration,
                                 "duration_ticks": off_tick - on_tick,
                                 "pitch": msg.note,
@@ -490,8 +505,10 @@ def _parse_midi_events(
                     )
             elif (is_note and not as_notes) or (not is_note and all_events):
                 # Barebones path: kwargs = msg attributes (sans delta-time).
-                # ``msg.dict()`` already includes a ``"type"`` field.
+                # Rename mido's ``"type"`` to ``"mtype"`` (message type) so it
+                # doesn't shadow the ``type`` builtin when unpacked as **kwargs.
                 kwargs = msg.dict()
                 kwargs.pop("time", None)
+                kwargs["mtype"] = kwargs.pop("type")
                 events.append(Event(time=abs_tick, kwargs=kwargs))
     return events
