@@ -56,43 +56,43 @@ For a guided walkthrough — visualization, MIDI parsing, scores, instruments �
 
 ## Installation
 
-Requires **Python 3.10 or later** and **git** (used by `pip` to fetch the package).
+Requires **Python 3.10 or later**.
 
 ### macOS
 
 ```sh
-brew install git python@3.10          # or 3.11, 3.12, 3.13
+brew install python@3.10          # or 3.11, 3.12, 3.13
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+pip install --upgrade pyquist
 ```
 
 If `pq.play(...)` is silent, give Terminal (or your IDE) microphone/audio access in **System Settings → Privacy & Security → Microphone**.
 
 ### Linux
 
-Install Python, git, and the PortAudio system library that `sounddevice` wraps:
+Install Python and the PortAudio system library that `sounddevice` wraps:
 
 ```sh
 # Debian / Ubuntu
-sudo apt install python3 python3-venv git libportaudio2
+sudo apt install python3 python3-venv libportaudio2
 
 # Fedora
-sudo dnf install python3 python3-virtualenv git portaudio
+sudo dnf install python3 python3-virtualenv portaudio
 
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+pip install --upgrade pyquist
 ```
 
 ### Windows
 
-Install [Python](https://www.python.org/downloads/) (3.10 or later, with "Add Python to PATH" checked) and [Git for Windows](https://git-scm.com/download/win), then open **Command Prompt**:
+Install [Python](https://www.python.org/downloads/) (3.10 or later, with "Add Python to PATH" checked), then open **Command Prompt**:
 
 ```bat
 python -m venv .venv
 .venv\Scripts\activate.bat
-pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+pip install --upgrade pyquist
 ```
 
 ### From source

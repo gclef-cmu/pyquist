@@ -1,5 +1,7 @@
 .ipynb_checkpoints/
 pyquist.egg-info/
+build/
+dist/
 venv/
 __pycache__
 .DS_Store
