@@ -1,24 +1,29 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyquist"
-version = "0.0.0"
+dynamic = ["version"]
 description = "Barebones utilities for low-level computer music programming in Python and NumPy. Teaching library for CMU 15-322."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Chris Donahue" }]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["audio", "music", "dsp", "midi", "numpy", "computer-music", "education"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Education",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
 ]
 dependencies = [
     "matplotlib",
@@ -46,11 +51,16 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/gclef-cmu/pyquist"
+Homepage = "https://gclef-cmu.org/pyquist"
+Documentation = "https://gclef-cmu.org/pyquist"
 Repository = "https://github.com/gclef-cmu/pyquist"
+Issues = "https://github.com/gclef-cmu/pyquist/issues"
 
 [project.scripts]
 pyquist = "pyquist.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "pyquist.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["pyquist*"]
@@ -59,7 +69,8 @@ exclude = ["examples*", "docs*"]
 # Ship the bundled audio + MIDI samples (used by the HelloPyquist notebook,
 # the README examples, and the test suite). Total ~2 MB.
 [tool.setuptools.package-data]
-pyquist = ["test_data/*"]
+# py.typed: PEP 561 marker so downstream type checkers honor our type hints.
+pyquist = ["py.typed", "test_data/*"]
 
 [tool.ruff]
 line-length = 88

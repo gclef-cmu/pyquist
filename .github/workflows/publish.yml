@@ -1,0 +1,58 @@
+name: Publish
+
+# Build the sdist + wheel and publish them to PyPI when a GitHub Release is
+# published.
+#
+# To cut a release: bump `__version__` in pyquist/__init__.py, tag the commit
+# (e.g. v0.1.0), and publish a GitHub Release for that tag.
+
+on:
+  release:
+    types: [published]
+  # Allow a manual dry-run build (no publish) from the Actions tab.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      # twine's metadata check mirrors what PyPI validates on upload.
+      - name: Check distributions
+        run: |
+          pip install twine
+          twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    # Only publish for an actual release; workflow_dispatch just builds above.
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pyquist
+    permissions:
+      # Required for Trusted Publishing (OIDC token exchange with PyPI).
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
