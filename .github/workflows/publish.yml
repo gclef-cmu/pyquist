@@ -4,7 +4,8 @@ name: Publish
 # published.
 #
 # To cut a release: bump `__version__` in pyquist/__init__.py, tag the commit
-# (e.g. v0.1.0), and publish a GitHub Release for that tag.
+# with the matching version (e.g. `0.1.0`), and publish a GitHub Release for
+# that tag. The build job fails if the tag and __version__ disagree.
 
 on:
   release:
@@ -26,6 +27,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build
+
+      # Guard against publishing a version that doesn't match the release tag.
+      # The built version comes from the wheel filename (pyquist-<version>-...).
+      - name: Verify tag matches package version
+        if: github.event_name == 'release'
+        run: |
+          pkg_version=$(basename dist/*.whl | cut -d- -f2)
+          tag="${{ github.ref_name }}"
+          echo "Built version: $pkg_version"
+          echo "Release tag:   $tag"
+          if [ "$pkg_version" != "$tag" ]; then
+            echo "::error::Release tag '$tag' does not match package __version__ '$pkg_version'. Bump pyquist/__init__.py and re-tag."
+            exit 1
+          fi
 
       # twine's metadata check mirrors what PyPI validates on upload.
       - name: Check distributions
