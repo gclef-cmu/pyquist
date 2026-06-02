@@ -3,19 +3,7 @@ name: Publish
 # Build the sdist + wheel and publish them to PyPI when a GitHub Release is
 # published.
 #
-# Authentication uses PyPI Trusted Publishing (OIDC) — no API tokens or
-# secrets are stored in the repo. One-time setup on PyPI:
-#   1. Create the project (or reserve the name) at https://pypi.org.
-#   2. Go to the project's Settings -> Publishing -> "Add a new publisher".
-#   3. Fill in:
-#        Owner:            gclef-cmu
-#        Repository name:  pyquist
-#        Workflow name:    publish.yml
-#        Environment name: pypi
-#   4. In this repo's Settings -> Environments, create an environment named
-#      "pypi" (optionally restrict it to release tags / require reviewers).
-#
-# To cut a release: bump `version` in pyproject.toml, tag the commit
+# To cut a release: bump `__version__` in pyquist/__init__.py, tag the commit
 # (e.g. v0.1.0), and publish a GitHub Release for that tag.
 
 on:

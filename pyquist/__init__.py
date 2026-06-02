@@ -1,3 +1,5 @@
+__version__ = "0.1.0"
+
 from .audio import Audio
 from .device import (
     play,
@@ -15,6 +17,7 @@ from .score import (
 )
 
 __all__ = [
+    "__version__",
     "Audio",
     "BasicMetronome",
     "Metronome",
