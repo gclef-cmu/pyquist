@@ -30,9 +30,9 @@ dependencies = [
     "mido",
     "numpy>=2.0",
     "requests",
-    "resampy",
     "sounddevice",
     "soundfile",
+    "soxr",
     "tqdm",
 ]
 

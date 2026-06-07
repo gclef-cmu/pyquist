@@ -4,8 +4,8 @@ from typing import IO, Optional, Union
 from urllib.request import urlopen
 
 import numpy as np
-import resampy
 import soundfile as sf
+import soxr
 
 from .helper import db_to_amplitude
 
@@ -328,9 +328,9 @@ class Audio:
     def resample(self, new_sample_rate: int, **kwargs) -> "Audio":
         """Returns a new ``Audio`` resampled to ``new_sample_rate``.
 
-        Resampling is performed by ``resampy`` using a polyphase bandlimited
-        filter; extra keyword arguments (e.g. ``filter='kaiser_fast'``) are
-        forwarded to :func:`resampy.resample`. The number of channels is
+        Resampling is performed by ``soxr`` using a bandlimited
+        sinc filter; extra keyword arguments (e.g. ``quality='VHQ'``) are
+        forwarded to :func:`soxr.resample`. The number of channels is
         preserved; the number of samples scales by
         ``new_sample_rate / self.sample_rate``.
 
@@ -343,8 +343,8 @@ class Audio:
             raise TypeError("new_sample_rate must be an int.")
         if new_sample_rate <= 0:
             raise ValueError("new_sample_rate must be positive.")
-        resampled = resampy.resample(
-            self._samples, self._sample_rate, new_sample_rate, axis=0, **kwargs
+        resampled = soxr.resample(
+            self._samples, self._sample_rate, new_sample_rate, **kwargs
         )
         return Audio(resampled, sample_rate=new_sample_rate)
 
