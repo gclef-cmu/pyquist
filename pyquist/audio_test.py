@@ -156,7 +156,9 @@ class TestAudio(unittest.TestCase):
         audio = Audio.from_file(_BLUES_RIFF_WAV)
         resampled = audio.resample(24000)
         self.assertEqual(resampled.num_channels, 2)
-        self.assertEqual(resampled.num_samples, audio.num_samples // 2)
+        # Output length follows new_rate/old_rate; allow ±1 for the
+        # resampler's rounding of a non-integer result.
+        self.assertAlmostEqual(resampled.num_samples, audio.num_samples / 2, delta=1)
         self.assertEqual(resampled.sample_rate, 24000)
         self.assertAlmostEqual(resampled.duration, audio.duration, places=3)
 
