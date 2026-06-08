@@ -55,6 +55,30 @@ class TestScoreListBehavior(unittest.TestCase):
     def test_empty_construction(self):
         self.assertEqual(len(Score()), 0)
 
+    def test_tuple_coercion(self):
+        # Bare (time, kwargs) tuples are coerced to Event on construction.
+        score = Score([(0.0, {"pitch": 60}), (1.0, {"pitch": 64})])
+        self.assertTrue(all(isinstance(e, Event) for e in score))
+        self.assertEqual(score[0], Event(0.0, {"pitch": 60}))
+        self.assertIsInstance(score[0].time, float)
+
+        # Coercion also applies to append, insert, extend, and setitem.
+        score.append((2.0, {"pitch": 67}))
+        score.insert(0, (-1.0, {"pitch": 48}))
+        score.extend([(3.0, {"pitch": 72})])
+        score[1] = (0.5, {"pitch": 50})
+        self.assertTrue(all(isinstance(e, Event) for e in score))
+
+        # Malformed tuples raise TypeError.
+        for bad in [(0.0,), (0.0, "x"), ("a", {}), (True, {})]:
+            with self.assertRaises(TypeError):
+                Score([bad])
+
+    def test_concatenation_preserves_event_coercion(self):
+        score = Score([(0.0, {"pitch": 60})]) + Score([(1.0, {"pitch": 64})])
+        self.assertIsInstance(score, Score)
+        self.assertTrue(all(isinstance(e, Event) for e in score))
+
     def test_append_and_iterate(self):
         score = Score()
         score.append(Event(0.0, {}))

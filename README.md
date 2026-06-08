@@ -25,8 +25,10 @@ pq.plot_spec(audio)   # spectrogram
 Loading and transforming:
 
 ```python
-riff = pq.Audio.from_url(
-    "https://github.com/gclef-cmu/pyquist/raw/refs/heads/main/pyquist/test_data/388954__fullmetaljedi__blues-riff-in-g-nylon.wav"
+from pyquist.paths import TEST_DATA_DIR
+
+riff = pq.Audio.from_file(
+    TEST_DATA_DIR / "388954__fullmetaljedi__blues-riff-in-g-nylon.wav"
 )
 clip = riff.segment(offset=5.0, duration=3.0).resample(8000)
 pq.play(clip)
@@ -35,7 +37,7 @@ pq.play(clip)
 Rendering a `Score` with a custom instrument. An instrument is called as `instrument(**event.kwargs)` — declare the kwargs you use and absorb the rest with `**kwargs`:
 
 ```python
-from pyquist.score import Score, Event, BasicMetronome
+from pyquist.score import Score, BasicMetronome
 from pyquist.helper import pitch_to_frequency
 
 def sine_instrument(pitch, duration, **kwargs):
@@ -45,9 +47,9 @@ def sine_instrument(pitch, duration, **kwargs):
     return pq.Audio(0.3 * np.sin(2 * np.pi * freq * t) * np.exp(-3 * t), sample_rate=sr)
 
 score = Score([
-    Event(0, {"pitch": 60, "duration": 0.5}),
-    Event(1, {"pitch": 64, "duration": 0.5}),
-    Event(2, {"pitch": 67, "duration": 0.5}),
+    (0, {"pitch": 60, "duration": 0.5}),
+    (1, {"pitch": 64, "duration": 0.5}),
+    (2, {"pitch": 67, "duration": 0.5}),
 ])
 pq.play(score.render(sine_instrument, metronome=BasicMetronome(120)))
 ```
