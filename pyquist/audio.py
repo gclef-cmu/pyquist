@@ -103,6 +103,28 @@ class Audio:
         """
         return cls.from_file(BytesIO(urlopen(url).read()))
 
+    @classmethod
+    def concatenate(cls, audios: "list[Audio]") -> "Audio":
+        """Joins a sequence of ``Audio`` end-to-end along the sample axis.
+
+        All inputs must share a ``num_channels`` and a ``sample_rate``;
+        otherwise ``ValueError`` is raised. The list must be non-empty.
+
+        Args:
+            audios: A non-empty list of ``Audio`` to join in order.
+        """
+        audios = list(audios)
+        if not audios:
+            raise ValueError("concatenate requires at least one Audio.")
+        sample_rates = {a.sample_rate for a in audios}
+        if len(sample_rates) != 1:
+            raise ValueError(f"Inconsistent sample rates: {sample_rates}.")
+        channel_counts = {a.num_channels for a in audios}
+        if len(channel_counts) != 1:
+            raise ValueError(f"Inconsistent channel counts: {channel_counts}.")
+        samples = np.concatenate([a.samples for a in audios], axis=0)
+        return cls(samples, sample_rate=sample_rates.pop())
+
     # --- Core attributes ----------------------------------------------------
 
     @property

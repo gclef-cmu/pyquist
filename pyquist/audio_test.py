@@ -83,6 +83,31 @@ class TestAudio(unittest.TestCase):
         with self.assertRaises(ValueError):
             Audio.zeros(10, -1)
 
+    def test_concatenate_classmethod(self):
+        a = Audio(np.ones(10), sample_rate=44100)
+        b = Audio(np.zeros(5), sample_rate=44100)
+        joined = Audio.concatenate([a, b])
+        self.assertEqual(joined.shape, (15, 1))
+        self.assertEqual(joined.sample_rate, 44100)
+        self.assertTrue(np.all(joined.samples[:10] == 1.0))
+        self.assertTrue(np.all(joined.samples[10:] == 0.0))
+
+        # Stereo concatenation preserves channel count.
+        s1 = Audio(np.ones((4, 2)), sample_rate=22050)
+        s2 = Audio(np.zeros((3, 2)), sample_rate=22050)
+        self.assertEqual(Audio.concatenate([s1, s2]).shape, (7, 2))
+
+        with self.assertRaises(ValueError):
+            Audio.concatenate([])
+        with self.assertRaises(ValueError):
+            Audio.concatenate(
+                [Audio(np.ones(3), sample_rate=44100), Audio(np.ones(3), sample_rate=22050)]
+            )
+        with self.assertRaises(ValueError):
+            Audio.concatenate(
+                [Audio(np.ones((3, 1)), sample_rate=44100), Audio(np.ones((3, 2)), sample_rate=44100)]
+            )
+
     def test_from_file_wav(self):
         # 388954__fullmetaljedi__blues-riff-in-g-nylon.wav: stereo, 48 kHz.
         audio = Audio.from_file(_BLUES_RIFF_WAV)
