@@ -81,10 +81,38 @@ class Event(NamedTuple):
     ``Event`` is a ``NamedTuple``: it unpacks like a regular tuple
     (``time, kwargs = event``), can be constructed positionally
     (``Event(0.5, {"pitch": 60})``) or by keyword.
+
+    You rarely need to construct an ``Event`` explicitly: :class:`Score`
+    converts any ``(time, kwargs)`` 2-tuple into an ``Event`` automatically, so
+    ``Score([(0.0, {"pitch": 60})])`` and ``Score([Event(0.0, {"pitch": 60})])``
+    are equivalent.
     """
 
     time: float
     kwargs: _KwargsDict
+
+
+def _coerce_event(item: Union["Event", Tuple[float, _KwargsDict]]) -> "Event":
+    """Returns ``item`` as an :class:`Event`, coercing a bare 2-tuple.
+
+    Accepts an existing :class:`Event` (returned unchanged) or a
+    ``(time, kwargs)`` tuple where ``time`` is a real number and ``kwargs`` is
+    a ``dict``. Anything else raises ``TypeError``.
+    """
+    if isinstance(item, Event):
+        return item
+    if (
+        isinstance(item, tuple)
+        and len(item) == 2
+        and isinstance(item[0], (int, float))
+        and not isinstance(item[0], bool)
+        and isinstance(item[1], dict)
+    ):
+        return Event(float(item[0]), item[1])
+    raise TypeError(
+        "Score items must be Event or (time: float, kwargs: dict) tuples; "
+        f"got {item!r}."
+    )
 
 
 # A callable invoked as ``instrument(**event.kwargs)`` that returns the
@@ -152,12 +180,37 @@ class Score(UserList):
     metronome is not stored on the score — keep it as a separate variable
     (or use the ``(score, metronome)`` tuple returned by :meth:`from_midi`).
 
-    Construct from any iterable of events::
+    Construct from any iterable of events. Bare ``(time, kwargs)`` tuples are
+    converted to :class:`Event` automatically, so these are equivalent::
 
         Score([Event(0.0, {"pitch": 60}), Event(1.0, {"pitch": 64})])
+        Score([(0.0, {"pitch": 60}), (1.0, {"pitch": 64})])
 
     Or load from a MIDI file via :meth:`from_midi`.
     """
+
+    def __init__(self, initlist=None):
+        """Builds a ``Score``, coercing any ``(time, kwargs)`` tuples to events."""
+        super().__init__()
+        if initlist is not None:
+            self.data = [_coerce_event(item) for item in initlist]
+
+    # --- list mutation (coerce tuples to Event) ----------------------------
+
+    def __setitem__(self, index, value):
+        if isinstance(index, slice):
+            self.data[index] = [_coerce_event(v) for v in value]
+        else:
+            self.data[index] = _coerce_event(value)
+
+    def append(self, item) -> None:
+        self.data.append(_coerce_event(item))
+
+    def insert(self, index, item) -> None:
+        self.data.insert(index, _coerce_event(item))
+
+    def extend(self, other) -> None:
+        self.data.extend(_coerce_event(item) for item in other)
 
     # --- properties --------------------------------------------------------
 
