@@ -191,20 +191,39 @@ class TestScoreSegment(unittest.TestCase):
 
 class TestBasicMetronome(unittest.TestCase):
     def test_basic(self):
-        m = BasicMetronome(120)
+        m = BasicMetronome(bpm=120)
         self.assertEqual(m.bpm, 120)
         self.assertEqual(m.beat_duration, 0.5)
         self.assertEqual(m.tick_to_seconds(1.0), 0.5)
         self.assertEqual(m.seconds_to_tick(0.5), 1.0)
 
+    def test_default_is_60_bpm(self):
+        # Default tps=60.0 → 60 BPM → 1 tick = 1 second.
+        m = BasicMetronome()
+        self.assertEqual(m.bpm, 60.0)
+        self.assertEqual(m.beat_duration, 1.0)
+
     def test_60_bpm(self):
-        m = BasicMetronome(60)
+        m = BasicMetronome(bpm=60)
         self.assertEqual(m.beat_duration, 1.0)
         self.assertEqual(m.tick_to_seconds(1.0), 1.0)
         self.assertEqual(m.seconds_to_tick(1.0), 1.0)
 
+    def test_tps(self):
+        # tps is ticks per second: 2 tps = 120 BPM.
+        m = BasicMetronome(tps=2.0)
+        self.assertEqual(m.bpm, 120.0)
+        self.assertEqual(m.beat_duration, 0.5)
+
+    def test_bpm_takes_precedence_over_default_tps(self):
+        self.assertEqual(BasicMetronome(bpm=90).bpm, 90)
+
+    def test_neither_defined_raises(self):
+        with self.assertRaises(ValueError):
+            BasicMetronome(tps=None)
+
     def test_round_trip(self):
-        m = BasicMetronome(140)
+        m = BasicMetronome(bpm=140)
         for tick in [0.0, 1.0, 2.5, 17.3]:
             self.assertAlmostEqual(m.seconds_to_tick(m.tick_to_seconds(tick)), tick)
 
@@ -310,7 +329,7 @@ class TestScoreRender(unittest.TestCase):
 
     def test_metronome_converts_ticks(self):
         # 60_000 BPM → 1 tick = 0.001s = 1 sample @ sr=1000.
-        m = BasicMetronome(60_000)
+        m = BasicMetronome(bpm=60_000)
         score = Score([Event(5.0, {"value": 0.5, "duration": 0.01})])
         audio = score.render(_const_tone, metronome=m)
         self.assertTrue(np.all(audio.samples[:5] == 0.0))

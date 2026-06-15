@@ -30,6 +30,13 @@ _THEORYTAB_ID_LENGTH = 11
 
 _HOOKTHEORY_API_URL = "https://api.hooktheory.com/v1/songs/public"
 
+# Supported time signatures as (numBeats, beatUnit) pairs: 3/4, 4/4, 6/8.
+# TheoryTab encodes the meter as a count of beats per measure (3, 4, or 6) with
+# beatUnit 1; a song's beat/duration values and its tempo are all expressed in
+# that same beat unit (quarter notes for 3/4 and 4/4, eighth notes for 6/8), so
+# they render correctly against the tempo regardless of the time signature.
+_SUPPORTED_METERS = {(3, 1), (4, 1), (6, 1)}
+
 # Diatonic scales as ordered (whole-/half-) step intervals between successive
 # notes. Each tuple has 6 entries (7 notes → 6 gaps).
 _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS = {
@@ -284,13 +291,13 @@ def theorytab_json_to_score(
         NotImplementedError: if the song's time signature / tempo / key
             structure is more complex than this parser supports.
     """
-    # We only support single-section songs in 3/4 or 4/4, single-tempo, single-key.
+    # We only support single-section songs in 3/4, 4/4, or 6/8, single-tempo,
+    # single-key. See _SUPPORTED_METERS for the meter encoding.
     meters = song_data["meters"]
     if (
         len(meters) != 1
         or meters[0]["beat"] != 1
-        or meters[0]["numBeats"] not in [3, 4]
-        or meters[0]["beatUnit"] != 1
+        or (meters[0]["numBeats"], meters[0]["beatUnit"]) not in _SUPPORTED_METERS
     ):
         raise NotImplementedError(
             "This song has an unsupported time signature. Try a different one."
@@ -306,7 +313,7 @@ def theorytab_json_to_score(
             "This song has an unsupported key signature. Try a different one."
         )
 
-    metronome = BasicMetronome(tempos[0]["bpm"])
+    metronome = BasicMetronome(bpm=tempos[0]["bpm"])
     key = keys[0]
 
     # Parse melody

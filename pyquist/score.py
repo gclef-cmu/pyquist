@@ -5,6 +5,30 @@ A :class:`Score` is a list of :class:`Event` — onset-based musical events.
 :class:`collections.UserList`): you can iterate, index, slice, concatenate
 with ``+``, repeat with ``*``, append, etc. — all preserving ``Score`` type.
 
+A minimal end-to-end example — build a score, define an instrument, render it
+to :class:`~pyquist.audio.Audio`::
+
+    import numpy as np
+    import pyquist as pq
+    from pyquist.helper import pitch_to_frequency
+    from pyquist.score import Score, BasicMetronome
+
+    # Each (time, kwargs) tuple is one event; Score coerces tuples to Events.
+    score = Score([
+        (0, {"pitch": 60, "duration": 0.5}),
+        (1, {"pitch": 64, "duration": 0.5}),
+    ])
+
+    def sine(pitch, duration, sample_rate=44100, **kwargs):
+        t = np.arange(int(duration * sample_rate)) / sample_rate
+        freq = pitch_to_frequency(pitch)
+        return pq.Audio(0.3 * np.sin(2 * np.pi * freq * t), sample_rate=sample_rate)
+
+    # With a metronome, event times are beats; at 120 BPM, 1 beat = 0.5 s.
+    audio = score.render(sine, metronome=BasicMetronome(bpm=120))
+
+The rest of this module fills in the details behind that flow.
+
 Each event carries a ``time`` (in *seconds* if rendered without a metronome,
 in *ticks* otherwise — a "tick" being whatever discrete time unit the
 metronome maps to seconds) and an instrument-specific ``kwargs`` dict. The
@@ -146,12 +170,35 @@ class Metronome(abc.ABC):
 class BasicMetronome(Metronome):
     """A fixed-tempo metronome where 1 tick = 1 beat.
 
-    Defaults to 60 BPM, which makes 1 tick = 1 second — a convenient
-    identity mapping for scores whose ``time`` field is already in seconds.
-    Pass an explicit ``bpm`` to map beats to seconds at a different tempo.
+    Specify the tempo with *exactly one* of two equivalent keyword arguments:
+
+    * ``bpm`` — beats per minute (``tps = bpm / 60``).
+    * ``tps`` — ticks (beats) per second (``bpm = tps * 60``).
+
+    The default, ``tps=1.0``, makes 1 tick = 1 second (i.e. 60 BPM) — a
+    convenient identity mapping for scores whose ``time`` field is already in
+    seconds. Pass ``bpm=`` instead to map beats to seconds at a musical tempo,
+    e.g. ``BasicMetronome(bpm=120.0)``. When ``bpm`` is given it takes
+    precedence over ``tps``.
+
+    Args:
+        bpm: Beats per minute. If given, takes precedence over ``tps``.
+        tps: Ticks (beats) per second. Defaults to ``1.0`` (60 BPM).
+
+    Raises:
+        ValueError: if both ``bpm`` and ``tps`` are ``None``.
     """
 
-    def __init__(self, bpm: float = 60.0):
+    def __init__(
+        self,
+        *,
+        bpm: Optional[float] = None,
+        tps: Optional[float] = 1.0,
+    ):
+        if bpm is None:
+            if tps is None:
+                raise ValueError("Specify exactly one of bpm or tps.")
+            bpm = tps * 60.0
         self.bpm = bpm
         self.beat_duration = 60.0 / bpm
 

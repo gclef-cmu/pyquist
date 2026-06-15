@@ -51,7 +51,7 @@ score = Score([
     (1, {"pitch": 64, "duration": 0.5}),
     (2, {"pitch": 67, "duration": 0.5}),
 ])
-pq.play(score.render(sine_instrument, metronome=BasicMetronome(120)))
+pq.play(score.render(sine_instrument, metronome=BasicMetronome(bpm=120)))
 ```
 
 For a guided walkthrough — visualization, MIDI parsing, scores, instruments — open [`examples/HelloPyquist.ipynb`](examples/HelloPyquist.ipynb) or [run it in Colab](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb).
