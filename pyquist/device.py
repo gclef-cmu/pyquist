@@ -150,21 +150,18 @@ def record(
 ) -> Audio:
     """Records audio from the default input device.
 
+    With ``browser=True`` (for Pyodide / JupyterLite, where there is no audio
+    device) recording is delegated to the optional ``browseraudio`` package via
+    the Web Audio API. Browser capture is interactive, so it shows a Record
+    button and returns an ``Audio`` that is filled in once the user clicks it.
+
     Args:
         duration: Recording length in seconds.
         progress_bar: Whether to display a tqdm progress bar.
-        browser: If True, record in the browser via the Web Audio API instead
-            of a PortAudio device — for Pyodide / JupyterLite, where no audio
-            device exists. Shows a Record button and returns an ``Audio`` that
-            is filled in place once the user clicks Record. (Browser capture is
-            interactive, so the returned ``Audio`` is empty until then; read it
-            in a later cell, after recording.) Requires the optional
-            ``browseraudio`` package.
+        browser: If True, record in the browser instead of via sounddevice.
 
     Returns:
-        The recorded Audio at the input device's native sample rate. With
-        ``browser=True`` the same ``Audio`` is returned immediately and
-        populated when the user clicks Record.
+        The recorded Audio at the input device's native sample rate.
     """
     if browser:
         return _record_in_browser(duration)
@@ -188,12 +185,10 @@ def record(
 
 
 def _record_in_browser(duration: float) -> Audio:
-    """Browser recording via the optional ``browseraudio`` package (Web Audio).
+    """Records via ``browseraudio`` (the Web Audio backend for :func:`record`).
 
-    Displays a Record widget and returns an :class:`Audio` straight away; the
-    capture is interactive, so the returned object starts empty and is filled
-    in place when the user clicks Record (a kernel-idle widget-comm message).
-    See :func:`record` (``browser=True``).
+    Returns the ``Audio`` immediately and fills it in once the user clicks
+    Record, since browser capture is interactive.
     """
     try:
         import browseraudio
@@ -204,7 +199,7 @@ def _record_in_browser(duration: float) -> Audio:
         ) from e
     import numpy as np
 
-    recorder = browseraudio.record(duration)  # displays the Record button
+    recorder = browseraudio.record(duration)
     audio = Audio(np.zeros((1, 1), dtype=np.float32), sample_rate=None)
 
     def _fill(_change) -> None:
