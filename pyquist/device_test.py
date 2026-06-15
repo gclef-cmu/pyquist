@@ -3,6 +3,7 @@ import io
 import json
 import tempfile
 import unittest
+import numpy as np
 from pathlib import Path
 from unittest import mock
 
@@ -502,6 +503,57 @@ class TestInIPythonNotebook(unittest.TestCase):
         # Simulate IPython being missing entirely.
         with mock.patch.dict("sys.modules", {"IPython": None}):
             self.assertFalse(device._in_ipython_notebook())
+
+
+class TestInBrowser(unittest.TestCase):
+    """``_in_browser`` must recognise browser-hosted runtimes (Pyodide /
+    JupyterLite) so that ``record`` delegates to the Web Audio backend instead
+    of calling sounddevice, which would crash where there is no audio device."""
+
+    def test_emscripten_platform_detected(self):
+        with mock.patch.object(device.sys, "platform", "emscripten"):
+            self.assertTrue(device._in_browser())
+
+    def test_native_platform_not_detected(self):
+        for platform_name in ("darwin", "linux", "win32"):
+            with mock.patch.object(device.sys, "platform", platform_name):
+                self.assertFalse(device._in_browser())
+
+
+class TestRecordDispatch(unittest.TestCase):
+    """``record`` picks the right backend based on context."""
+
+    def test_uses_browser_in_browser(self):
+        sentinel = object()
+        with (
+            mock.patch.object(device, "_in_browser", return_value=True),
+            mock.patch.object(
+                device, "_record_in_browser", return_value=sentinel
+            ) as mock_browser,
+            mock.patch.object(device.sd, "rec") as mock_rec,
+        ):
+            result = device.record(1.0, progress_bar=False)
+            self.assertIs(result, sentinel)
+            mock_browser.assert_called_once_with(1.0)
+            mock_rec.assert_not_called()
+
+    def test_uses_sounddevice_outside_browser(self):
+        with (
+            mock.patch.object(device, "_in_browser", return_value=False),
+            mock.patch.object(device, "_record_in_browser") as mock_browser,
+            mock.patch.object(
+                device.sd,
+                "query_devices",
+                return_value={"default_samplerate": 44100, "max_input_channels": 1},
+            ),
+            mock.patch.object(
+                device.sd, "rec", return_value=np.zeros((44100, 1), dtype=np.float32)
+            ) as mock_rec,
+            mock.patch.object(device.sd, "wait"),
+        ):
+            device.record(1.0, progress_bar=False)
+            mock_rec.assert_called_once()
+            mock_browser.assert_not_called()
 
 
 if __name__ == "__main__":
