@@ -1,3 +1,42 @@
+"""Raw audio sample manipulation via Numpy-backed containers.
+
+Everything in this module centers on :class:`Audio`, a thin wrapper around a
+2D ``float32`` numpy array shaped ``(num_samples, num_channels)`` plus a
+``sample_rate`` in Hz. By convention, sample values in ``[-1.0, 1.0]`` are
+digital full-scale; values outside that range are valid in memory but clip on
+playback or when written to most file formats.
+
+Construct one from a numpy array, or load existing audio from disk or the web::
+
+    import numpy as np
+    import pyquist as pq
+
+    sr = 44100
+    t = np.arange(sr) / sr
+    tone = pq.Audio(0.5 * np.sin(2 * np.pi * 440 * t), sample_rate=sr)  # 1s of A4
+
+    riff = pq.Audio.from_file("guitar.wav")
+    drums = pq.Audio.from_url("https://example.com/drums.mp3")
+
+``Audio`` behaves like a numpy array where it can — it supports indexing,
+slicing, ``len()``, and elementwise arithmetic (``+``, ``-``, ``*``, ``/``,
+in-place variants), all returning ``Audio``::
+
+    mix = riff + drums[: len(riff)]  # sum the overlapping region
+    mix *= 0.5  # halve the amplitude in place
+
+On top of that it offers music-specific helpers that return new ``Audio``
+objects::
+
+    clip = mix.as_mono().segment(offset=1.0, duration=3.0).resample(8000)
+    clip.normalize(peak_dbfs=-1.0)
+    clip.write("clip.wav")
+
+See :meth:`Audio.zeros` for an empty destination buffer and
+:meth:`Audio.concatenate` to join buffers end to end. To turn musical events
+into ``Audio``, see :mod:`pyquist.score`.
+"""
+
 import pathlib
 from io import BytesIO
 from typing import IO, Optional, Union

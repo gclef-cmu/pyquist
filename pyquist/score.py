@@ -5,6 +5,30 @@ A :class:`Score` is a list of :class:`Event` — onset-based musical events.
 :class:`collections.UserList`): you can iterate, index, slice, concatenate
 with ``+``, repeat with ``*``, append, etc. — all preserving ``Score`` type.
 
+A minimal end-to-end example — build a score, define an instrument, render it
+to :class:`~pyquist.audio.Audio`::
+
+    import numpy as np
+    import pyquist as pq
+    from pyquist.helper import pitch_to_frequency
+    from pyquist.score import Score, BasicMetronome
+
+    # Each (time, kwargs) tuple is one event; Score coerces tuples to Events.
+    score = Score([
+        (0, {"pitch": 60, "duration": 0.5}),
+        (1, {"pitch": 64, "duration": 0.5}),
+    ])
+
+    def sine(pitch, duration, sample_rate=44100, **kwargs):
+        t = np.arange(int(duration * sample_rate)) / sample_rate
+        freq = pitch_to_frequency(pitch)
+        return pq.Audio(0.3 * np.sin(2 * np.pi * freq * t), sample_rate=sample_rate)
+
+    # With a metronome, event times are beats; at 120 BPM, 1 beat = 0.5 s.
+    audio = score.render(sine, metronome=BasicMetronome(bpm=120))
+
+The rest of this module fills in the details behind that flow.
+
 Each event carries a ``time`` (in *seconds* if rendered without a metronome,
 in *ticks* otherwise — a "tick" being whatever discrete time unit the
 metronome maps to seconds) and an instrument-specific ``kwargs`` dict. The
@@ -144,22 +168,50 @@ class Metronome(abc.ABC):
 
 
 class BasicMetronome(Metronome):
-    """A fixed-tempo metronome where 1 tick = 1 beat.
+    """A fixed-tempo metronome: a constant number of ticks per second.
 
-    Defaults to 60 BPM, which makes 1 tick = 1 second — a convenient
-    identity mapping for scores whose ``time`` field is already in seconds.
-    Pass an explicit ``bpm`` to map beats to seconds at a different tempo.
+    A *tick* is the canonical unit of score time (see :class:`Metronome`).
+    Depending on the score it might stand for a beat, a MIDI tick, a second, or
+    any other unit — ``BasicMetronome`` just maps ticks to seconds at a single
+    constant rate, :attr:`ticks_per_second`.
+
+    Set that rate with *exactly one* of two keyword arguments:
+
+    * ``tps`` — ticks per second, the canonical parameter. The default,
+      ``tps=1.0``, makes 1 tick = 1 second: an identity mapping convenient for
+      scores whose ``time`` field is already in seconds.
+    * ``bpm`` — beats per minute, a musical convenience for the common case
+      where a tick is a beat. BPM is just that same rate expressed per minute
+      rather than per second, converted internally via ``tps = bpm / 60`` — so
+      ``BasicMetronome(bpm=120)`` is exactly ``BasicMetronome(tps=2.0)``. When
+      given, ``bpm`` takes precedence over ``tps``.
+
+    Args:
+        tps: Ticks per second. Defaults to ``1.0`` (1 tick = 1 second).
+        bpm: Beats per minute. If given, overrides ``tps`` (``tps = bpm / 60``).
+
+    Raises:
+        ValueError: if both ``tps`` and ``bpm`` are ``None``.
     """
 
-    def __init__(self, bpm: float = 60.0):
-        self.bpm = bpm
-        self.beat_duration = 60.0 / bpm
+    def __init__(
+        self,
+        *,
+        tps: Optional[float] = 1.0,
+        bpm: Optional[float] = None,
+    ):
+        if bpm is not None:
+            tps = bpm / 60.0
+        if tps is None:
+            raise ValueError("Specify exactly one of bpm or tps.")
+        self.ticks_per_second = tps
+        self.seconds_per_tick = 1.0 / tps
 
     def tick_to_seconds(self, tick: float) -> float:
-        return tick * self.beat_duration
+        return tick * self.seconds_per_tick
 
     def seconds_to_tick(self, seconds: float) -> float:
-        return seconds / self.beat_duration
+        return seconds * self.ticks_per_second
 
 
 # ---------------------------------------------------------------------------
