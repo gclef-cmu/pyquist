@@ -170,6 +170,35 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audi
     return Audio(samples, sample_rate=sample_rate)
 
 
+def record_widget(duration: float = 3.0):
+    """Interactive in-browser microphone recorder (Pyodide / JupyterLite).
+
+    Unlike :func:`record` — which needs a PortAudio device and so is
+    unavailable in the browser — this captures from the microphone via the Web
+    Audio API, delegating to the optional ``browseraudio`` package. Because
+    browser capture is interactive and asynchronous, it returns a
+    ``browseraudio.Recorder`` rather than an :class:`~pyquist.audio.Audio`:
+    display it, click **Record**, then call ``recorder.to_pyquist()`` in a
+    later cell.
+
+    Requires ``browseraudio`` (``pip install pyquist[browser]``).
+
+    Args:
+        duration: Recording length in seconds.
+
+    Returns:
+        A ``browseraudio.Recorder`` widget.
+    """
+    try:
+        import browseraudio
+    except ImportError as e:
+        raise RuntimeError(
+            "In-browser recording needs the 'browseraudio' package — install "
+            "pyquist[browser] (or `pip install browseraudio`)."
+        ) from e
+    return browseraudio.record(duration)
+
+
 def _resolve_device(device_id_or_name: DeviceRef, kind: str) -> Tuple[int, str]:
     """Resolves an int ID or name substring to a ``(device_id, device_name)`` pair.
 

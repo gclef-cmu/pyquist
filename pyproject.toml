@@ -37,6 +37,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# In-browser microphone recording (Pyodide / JupyterLite). pyquist.record()
+# delegates to this when running under Pyodide; it is never needed natively.
+browser = [
+    "browseraudio>=0.1.0",
+]
 dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
