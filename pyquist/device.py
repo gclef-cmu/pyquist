@@ -12,6 +12,7 @@ from typing import Any, Optional, Tuple, Union
 
 import sounddevice as sd
 import tqdm
+import numpy as np
 
 from .audio import Audio
 from .paths import CACHE_DIR
@@ -95,6 +96,18 @@ def _in_ipython_notebook() -> bool:
     return ipy.__class__.__name__ != "TerminalInteractiveShell"
 
 
+def _in_browser() -> bool:
+    """Returns True if running inside a browser-hosted Python runtime.
+
+    Pyodide (and JupyterLite, which runs a Pyodide kernel) compiles
+    CPython to WebAssembly via Emscripten, so ``sys.platform`` reports
+    ``"emscripten"``. In these environments there is no OS audio device, so
+    capture and playback must go through the Web Audio API rather than
+    :mod:`sounddevice`.
+    """
+    return sys.platform == "emscripten"
+
+
 def play(
     audio: Audio,
     *,
@@ -145,25 +158,24 @@ def record(
     duration: float,
     *,
     progress_bar: bool = True,
-    browser: bool = False,
     **kwargs: Any,
 ) -> Audio:
     """Records audio from the default input device.
 
-    With ``browser=True`` (for Pyodide / JupyterLite, where there is no audio
-    device) recording is delegated to the optional ``browseraudio`` package via
-    the Web Audio API. Browser capture is interactive, so it shows a Record
-    button and returns an ``Audio`` that is filled in once the user clicks it.
+    In a browser-hosted runtime (Pyodide / JupyterLite, where there is no audio
+    device) recording is delegated automatically to the optional ``browseraudio``
+    package via the Web Audio API. Browser capture is interactive, so it shows a
+    Record button and returns an ``Audio`` that is filled in once the user clicks
+    it. Everywhere else, recording goes through :mod:`sounddevice`.
 
     Args:
         duration: Recording length in seconds.
         progress_bar: Whether to display a tqdm progress bar.
-        browser: If True, record in the browser instead of via sounddevice.
 
     Returns:
         The recorded Audio at the input device's native sample rate.
     """
-    if browser:
+    if _in_browser():
         return _record_in_browser(duration)
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
@@ -197,7 +209,6 @@ def _record_in_browser(duration: float) -> Audio:
             "In-browser recording needs the 'browseraudio' package — install "
             "pyquist[browser] (or `pip install browseraudio`)."
         ) from e
-    import numpy as np
 
     recorder = browseraudio.record(duration)
     audio = Audio(np.zeros((1, 1), dtype=np.float32), sample_rate=None)
