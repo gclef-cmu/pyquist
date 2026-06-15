@@ -168,45 +168,50 @@ class Metronome(abc.ABC):
 
 
 class BasicMetronome(Metronome):
-    """A fixed-tempo metronome where 1 tick = 1 beat.
+    """A fixed-tempo metronome: a constant number of ticks per second.
 
-    Specify the tempo with *exactly one* of two equivalent keyword arguments:
+    A *tick* is the canonical unit of score time (see :class:`Metronome`).
+    Depending on the score it might stand for a beat, a MIDI tick, a second, or
+    any other unit — ``BasicMetronome`` just maps ticks to seconds at a single
+    constant rate, :attr:`ticks_per_second`.
 
-    * ``bpm`` — beats per minute (``tps = bpm / 60``).
-    * ``tps`` — ticks (beats) per second (``bpm = tps * 60``).
+    Set that rate with *exactly one* of two keyword arguments:
 
-    The default, ``tps=1.0``, makes 1 tick = 1 second (i.e. 60 BPM) — a
-    convenient identity mapping for scores whose ``time`` field is already in
-    seconds. Pass ``bpm=`` instead to map beats to seconds at a musical tempo,
-    e.g. ``BasicMetronome(bpm=120.0)``. When ``bpm`` is given it takes
-    precedence over ``tps``.
+    * ``tps`` — ticks per second, the canonical parameter. The default,
+      ``tps=1.0``, makes 1 tick = 1 second: an identity mapping convenient for
+      scores whose ``time`` field is already in seconds.
+    * ``bpm`` — beats per minute, a musical convenience for the common case
+      where a tick is a beat. BPM is just that same rate expressed per minute
+      rather than per second, converted internally via ``tps = bpm / 60`` — so
+      ``BasicMetronome(bpm=120)`` is exactly ``BasicMetronome(tps=2.0)``. When
+      given, ``bpm`` takes precedence over ``tps``.
 
     Args:
-        bpm: Beats per minute. If given, takes precedence over ``tps``.
-        tps: Ticks (beats) per second. Defaults to ``1.0`` (60 BPM).
+        tps: Ticks per second. Defaults to ``1.0`` (1 tick = 1 second).
+        bpm: Beats per minute. If given, overrides ``tps`` (``tps = bpm / 60``).
 
     Raises:
-        ValueError: if both ``bpm`` and ``tps`` are ``None``.
+        ValueError: if both ``tps`` and ``bpm`` are ``None``.
     """
 
     def __init__(
         self,
         *,
-        bpm: Optional[float] = None,
         tps: Optional[float] = 1.0,
+        bpm: Optional[float] = None,
     ):
-        if bpm is None:
-            if tps is None:
-                raise ValueError("Specify exactly one of bpm or tps.")
-            bpm = tps * 60.0
-        self.bpm = bpm
-        self.beat_duration = 60.0 / bpm
+        if bpm is not None:
+            tps = bpm / 60.0
+        if tps is None:
+            raise ValueError("Specify exactly one of bpm or tps.")
+        self.ticks_per_second = tps
+        self.seconds_per_tick = 1.0 / tps
 
     def tick_to_seconds(self, tick: float) -> float:
-        return tick * self.beat_duration
+        return tick * self.seconds_per_tick
 
     def seconds_to_tick(self, seconds: float) -> float:
-        return seconds / self.beat_duration
+        return seconds * self.ticks_per_second
 
 
 # ---------------------------------------------------------------------------

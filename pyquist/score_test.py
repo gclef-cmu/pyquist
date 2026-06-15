@@ -192,31 +192,38 @@ class TestScoreSegment(unittest.TestCase):
 class TestBasicMetronome(unittest.TestCase):
     def test_basic(self):
         m = BasicMetronome(bpm=120)
-        self.assertEqual(m.bpm, 120)
-        self.assertEqual(m.beat_duration, 0.5)
+        self.assertEqual(m.ticks_per_second, 2.0)
+        self.assertEqual(m.seconds_per_tick, 0.5)
         self.assertEqual(m.tick_to_seconds(1.0), 0.5)
         self.assertEqual(m.seconds_to_tick(0.5), 1.0)
 
-    def test_default_is_60_bpm(self):
-        # Default tps=60.0 → 60 BPM → 1 tick = 1 second.
+    def test_default_is_identity(self):
+        # Default tps=1.0 → 1 tick = 1 second (60 BPM).
         m = BasicMetronome()
-        self.assertEqual(m.bpm, 60.0)
-        self.assertEqual(m.beat_duration, 1.0)
+        self.assertEqual(m.ticks_per_second, 1.0)
+        self.assertEqual(m.seconds_per_tick, 1.0)
 
     def test_60_bpm(self):
         m = BasicMetronome(bpm=60)
-        self.assertEqual(m.beat_duration, 1.0)
+        self.assertEqual(m.seconds_per_tick, 1.0)
         self.assertEqual(m.tick_to_seconds(1.0), 1.0)
         self.assertEqual(m.seconds_to_tick(1.0), 1.0)
 
     def test_tps(self):
         # tps is ticks per second: 2 tps = 120 BPM.
         m = BasicMetronome(tps=2.0)
-        self.assertEqual(m.bpm, 120.0)
-        self.assertEqual(m.beat_duration, 0.5)
+        self.assertEqual(m.ticks_per_second, 2.0)
+        self.assertEqual(m.seconds_per_tick, 0.5)
 
-    def test_bpm_takes_precedence_over_default_tps(self):
-        self.assertEqual(BasicMetronome(bpm=90).bpm, 90)
+    def test_bpm_equivalent_to_tps(self):
+        # bpm is just the rate per minute: bpm=120 == tps=2.0.
+        self.assertEqual(
+            BasicMetronome(bpm=120).ticks_per_second,
+            BasicMetronome(tps=2.0).ticks_per_second,
+        )
+
+    def test_bpm_overrides_default_tps(self):
+        self.assertEqual(BasicMetronome(bpm=90).ticks_per_second, 1.5)
 
     def test_neither_defined_raises(self):
         with self.assertRaises(ValueError):
