@@ -155,17 +155,19 @@ def record(
         progress_bar: Whether to display a tqdm progress bar.
         browser: If True, record in the browser via the Web Audio API instead
             of a PortAudio device — for Pyodide / JupyterLite, where no audio
-            device exists. Delegates to the optional ``browseraudio`` package;
-            because browser capture is interactive, it returns a
-            ``browseraudio.Recorder`` (display it, click **Record**, then call
-            ``recorder.to_pyquist()`` in a later cell) rather than an ``Audio``.
+            device exists. Shows a Record button and returns an ``Audio`` that
+            is filled in place once the user clicks Record. (Browser capture is
+            interactive, so the returned ``Audio`` is empty until then; read it
+            in a later cell, after recording.) Requires the optional
+            ``browseraudio`` package.
 
     Returns:
-        The recorded Audio at the input device's native sample rate — or, with
-        ``browser=True``, a ``browseraudio.Recorder`` (see above).
+        The recorded Audio at the input device's native sample rate. With
+        ``browser=True`` the same ``Audio`` is returned immediately and
+        populated when the user clicks Record.
     """
     if browser:
-        return _record_in_browser(duration)  # type: ignore[return-value]
+        return _record_in_browser(duration)
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
     num_channels = device_info["max_input_channels"]
@@ -185,10 +187,13 @@ def record(
     return Audio(samples, sample_rate=sample_rate)
 
 
-def _record_in_browser(duration: float):
+def _record_in_browser(duration: float) -> Audio:
     """Browser recording via the optional ``browseraudio`` package (Web Audio).
 
-    Returns a ``browseraudio.Recorder``; see :func:`record` (``browser=True``).
+    Displays a Record widget and returns an :class:`Audio` straight away; the
+    capture is interactive, so the returned object starts empty and is filled
+    in place when the user clicks Record (a kernel-idle widget-comm message).
+    See :func:`record` (``browser=True``).
     """
     try:
         import browseraudio
@@ -197,7 +202,18 @@ def _record_in_browser(duration: float):
             "In-browser recording needs the 'browseraudio' package — install "
             "pyquist[browser] (or `pip install browseraudio`)."
         ) from e
-    return browseraudio.record(duration)
+    import numpy as np
+
+    recorder = browseraudio.record(duration)  # displays the Record button
+    audio = Audio(np.zeros((1, 1), dtype=np.float32), sample_rate=None)
+
+    def _fill(_change) -> None:
+        if recorder.samples is not None:
+            audio.samples = recorder.samples
+            audio.sample_rate = recorder.sample_rate
+
+    recorder.observe(_fill, names="_pcm_b64")
+    return audio
 
 
 def _resolve_device(device_id_or_name: DeviceRef, kind: str) -> Tuple[int, str]:
