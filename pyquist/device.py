@@ -141,16 +141,31 @@ def play(
         sd.wait()
 
 
-def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audio:
+def record(
+    duration: float,
+    *,
+    progress_bar: bool = True,
+    browser: bool = False,
+    **kwargs: Any,
+) -> Audio:
     """Records audio from the default input device.
 
     Args:
         duration: Recording length in seconds.
         progress_bar: Whether to display a tqdm progress bar.
+        browser: If True, record in the browser via the Web Audio API instead
+            of a PortAudio device — for Pyodide / JupyterLite, where no audio
+            device exists. Delegates to the optional ``browseraudio`` package;
+            because browser capture is interactive, it returns a
+            ``browseraudio.Recorder`` (display it, click **Record**, then call
+            ``recorder.to_pyquist()`` in a later cell) rather than an ``Audio``.
 
     Returns:
-        The recorded Audio at the input device's native sample rate.
+        The recorded Audio at the input device's native sample rate — or, with
+        ``browser=True``, a ``browseraudio.Recorder`` (see above).
     """
+    if browser:
+        return _record_in_browser(duration)  # type: ignore[return-value]
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
     num_channels = device_info["max_input_channels"]
@@ -170,24 +185,10 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audi
     return Audio(samples, sample_rate=sample_rate)
 
 
-def record_widget(duration: float = 3.0):
-    """Interactive in-browser microphone recorder (Pyodide / JupyterLite).
+def _record_in_browser(duration: float):
+    """Browser recording via the optional ``browseraudio`` package (Web Audio).
 
-    Unlike :func:`record` — which needs a PortAudio device and so is
-    unavailable in the browser — this captures from the microphone via the Web
-    Audio API, delegating to the optional ``browseraudio`` package. Because
-    browser capture is interactive and asynchronous, it returns a
-    ``browseraudio.Recorder`` rather than an :class:`~pyquist.audio.Audio`:
-    display it, click **Record**, then call ``recorder.to_pyquist()`` in a
-    later cell.
-
-    Requires ``browseraudio`` (``pip install pyquist[browser]``).
-
-    Args:
-        duration: Recording length in seconds.
-
-    Returns:
-        A ``browseraudio.Recorder`` widget.
+    Returns a ``browseraudio.Recorder``; see :func:`record` (``browser=True``).
     """
     try:
         import browseraudio

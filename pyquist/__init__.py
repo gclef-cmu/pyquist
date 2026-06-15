@@ -4,7 +4,6 @@ from .audio import Audio
 from .device import (
     play,
     record,
-    record_widget,
     set_input_device,
     set_output_device,
 )
@@ -29,7 +28,6 @@ __all__ = [
     "plot_freq",
     "plot_spec",
     "record",
-    "record_widget",
     "set_input_device",
     "set_output_device",
 ]
