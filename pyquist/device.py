@@ -117,7 +117,10 @@ def play(
 ) -> None:
     """Plays an Audio.
 
-    In a Jupyter / IPython notebook this renders an inline player widget via
+    In a browser-hosted runtime (Pyodide / JupyterLite, where there is no audio
+    device) playback is delegated automatically to the optional ``browseraudio``
+    package via the Web Audio API, which shows a ▶ Play widget. In a Jupyter /
+    IPython notebook this renders an inline player widget via
     :class:`IPython.display.Audio`. Outside a notebook (or when
     ``force_sounddevice=True``) it plays through the default output device
     via :mod:`sounddevice`.
@@ -130,7 +133,8 @@ def play(
         force_sounddevice: If True, always use sounddevice playback, even
             when called from a notebook. Useful when you want the audio
             played through the OS audio output rather than as an inline
-            player widget.
+            player widget. Ignored in a browser-hosted runtime, which has no
+            sounddevice output and always uses ``browseraudio``.
     """
     if normalize:
         audio = audio.normalize(in_place=False)
@@ -138,7 +142,9 @@ def play(
     if safe:
         audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
 
-    if not force_sounddevice and _in_ipython_notebook():
+    if _in_browser():
+        _play_in_browser(audio)
+    elif not force_sounddevice and _in_ipython_notebook():
         # Imported lazily so headless / non-notebook usage doesn't need IPython.
         from IPython.display import Audio as IPythonAudio, display  # type: ignore[import-not-found] # noqa: I001
 
@@ -152,6 +158,19 @@ def play(
     else:
         sd.play(audio, audio.sample_rate)
         sd.wait()
+
+
+def _play_in_browser(audio: Audio) -> None:
+    """Plays via ``browseraudio`` (the Web Audio backend for :func:`play`)."""
+    try:
+        import browseraudio
+    except ImportError as e:
+        raise RuntimeError(
+            "In-browser playback needs the 'browseraudio' package — install "
+            "pyquist[browser] (or `pip install browseraudio`)."
+        ) from e
+
+    browseraudio.play(audio.samples, audio.sample_rate)
 
 
 def record(

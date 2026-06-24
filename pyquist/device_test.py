@@ -456,6 +456,32 @@ class TestPlayDispatch(unittest.TestCase):
             device.play(audio, force_sounddevice=True)
             mock_play.assert_called_once()
 
+    def test_uses_browser_in_browser(self):
+        audio = self._make_audio()
+        with (
+            mock.patch.object(device, "_in_browser", return_value=True),
+            mock.patch.object(device, "_play_in_browser") as mock_browser,
+            mock.patch.object(device.sd, "play") as mock_play,
+        ):
+            device.play(audio)
+            mock_browser.assert_called_once()
+            mock_play.assert_not_called()
+
+    def test_browser_takes_precedence_over_notebook(self):
+        # In a browser notebook (JupyterLite) both _in_browser and
+        # _in_ipython_notebook are True; browseraudio must win over the IPython
+        # inline player, since that is the backend that reaches the speakers.
+        audio = self._make_audio()
+        with (
+            mock.patch.object(device, "_in_browser", return_value=True),
+            mock.patch.object(device, "_in_ipython_notebook", return_value=True),
+            mock.patch.object(device, "_play_in_browser") as mock_browser,
+            mock.patch.object(device.sd, "play") as mock_play,
+        ):
+            device.play(audio)
+            mock_browser.assert_called_once()
+            mock_play.assert_not_called()
+
 
 class TestInIPythonNotebook(unittest.TestCase):
     """``_in_ipython_notebook`` must recognise every flavour of notebook
