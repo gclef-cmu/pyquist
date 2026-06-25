@@ -162,12 +162,6 @@ def record(
 ) -> Audio:
     """Records audio from the default input device.
 
-    In a browser-hosted runtime (Pyodide / JupyterLite, where there is no audio
-    device) recording is delegated automatically to the optional ``browseraudio``
-    package via the Web Audio API. Browser capture is interactive, so it shows a
-    Record button and returns an ``Audio`` that is filled in once the user clicks
-    it. Everywhere else, recording goes through :mod:`sounddevice`.
-
     Args:
         duration: Recording length in seconds.
         progress_bar: Whether to display a tqdm progress bar.
@@ -175,8 +169,11 @@ def record(
     Returns:
         The recorded Audio at the input device's native sample rate.
     """
+
+    # :mod:`sounddevice` is not available when running in browser, handle separately.
     if _in_browser():
         return _record_in_browser(duration)
+    
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
     num_channels = device_info["max_input_channels"]
@@ -199,8 +196,8 @@ def record(
 def _record_in_browser(duration: float) -> Audio:
     """Records via ``browseraudio`` (the Web Audio backend for :func:`record`).
 
-    Returns the ``Audio`` immediately and fills it in once the user clicks
-    Record, since browser capture is interactive.
+    Returns an empty ``Audio`` that fills in once the user clicks Record (read it
+    in a later cell); failures are printed to stderr.
     """
     try:
         import browseraudio
@@ -213,12 +210,14 @@ def _record_in_browser(duration: float) -> Audio:
     recorder = browseraudio.record(duration)
     audio = Audio(np.zeros((1, 1), dtype=np.float32), sample_rate=None)
 
-    def _fill(_change) -> None:
-        if recorder.samples is not None:
-            audio.samples = recorder.samples
-            audio.sample_rate = recorder.sample_rate
+    def _fill(rec) -> None:
+        audio.samples = rec.samples
+        audio.sample_rate = rec.sample_rate
 
-    recorder.observe(_fill, names="_pcm_b64")
+    recorder.on_result(_fill)
+    recorder.on_error(
+        lambda msg: print(f"In-browser recording failed: {msg}", file=sys.stderr)
+    )
     return audio
 
 
