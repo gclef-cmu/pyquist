@@ -214,6 +214,7 @@ def _record_in_browser(duration: float) -> Audio:
         audio.samples = rec.samples
         audio.sample_rate = rec.sample_rate
 
+    # TODO: Figure out how to make this a synchronous, blocking call.
     recorder.on_result(_fill)
     recorder.on_error(
         lambda msg: print(f"In-browser recording failed: {msg}", file=sys.stderr)
