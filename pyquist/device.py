@@ -10,7 +10,11 @@ import sys
 import time
 from typing import Any, Optional, Tuple, Union
 
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except ImportError:
+    # No PortAudio in the browser; use browseraudio's Web Audio facade.
+    import browseraudio.sounddevice as sd
 import tqdm
 import numpy as np
 
