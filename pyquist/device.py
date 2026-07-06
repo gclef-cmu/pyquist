@@ -12,6 +12,7 @@ from typing import Any, Optional, Tuple, Union
 
 import sounddevice as sd
 import tqdm
+import numpy as np
 
 from .audio import Audio
 from .paths import CACHE_DIR
@@ -95,6 +96,18 @@ def _in_ipython_notebook() -> bool:
     return ipy.__class__.__name__ != "TerminalInteractiveShell"
 
 
+def _in_browser() -> bool:
+    """Returns True if running inside a browser-hosted Python runtime.
+
+    Pyodide (and JupyterLite, which runs a Pyodide kernel) compiles
+    CPython to WebAssembly via Emscripten, so ``sys.platform`` reports
+    ``"emscripten"``. In these environments there is no OS audio device, so
+    capture and playback must go through the Web Audio API rather than
+    :mod:`sounddevice`.
+    """
+    return sys.platform == "emscripten"
+
+
 def play(
     audio: Audio,
     *,
@@ -141,7 +154,12 @@ def play(
         sd.wait()
 
 
-def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audio:
+def record(
+    duration: float,
+    *,
+    progress_bar: bool = True,
+    **kwargs: Any,
+) -> Audio:
     """Records audio from the default input device.
 
     Args:
@@ -151,6 +169,11 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audi
     Returns:
         The recorded Audio at the input device's native sample rate.
     """
+
+    # :mod:`sounddevice` is not available when running in browser, handle separately.
+    if _in_browser():
+        return _record_in_browser(duration)
+    
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
     num_channels = device_info["max_input_channels"]
@@ -168,6 +191,35 @@ def record(duration: float, *, progress_bar: bool = True, **kwargs: Any) -> Audi
                 time.sleep(duration / 100)
     sd.wait()
     return Audio(samples, sample_rate=sample_rate)
+
+
+def _record_in_browser(duration: float) -> Audio:
+    """Records via ``browseraudio`` (the Web Audio backend for :func:`record`).
+
+    Returns an empty ``Audio`` that fills in once the user clicks Record (read it
+    in a later cell); failures are printed to stderr.
+    """
+    try:
+        import browseraudio
+    except ImportError as e:
+        raise RuntimeError(
+            "In-browser recording needs the 'browseraudio' package — install "
+            "pyquist[browser] (or `pip install browseraudio`)."
+        ) from e
+
+    recorder = browseraudio.record(duration)
+    audio = Audio(np.zeros((1, 1), dtype=np.float32), sample_rate=None)
+
+    def _fill(rec) -> None:
+        audio.samples = rec.samples
+        audio.sample_rate = rec.sample_rate
+
+    # TODO: Figure out how to make this a synchronous, blocking call.
+    recorder.on_result(_fill)
+    recorder.on_error(
+        lambda msg: print(f"In-browser recording failed: {msg}", file=sys.stderr)
+    )
+    return audio
 
 
 def _resolve_device(device_id_or_name: DeviceRef, kind: str) -> Tuple[int, str]:

@@ -37,6 +37,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+browser = [
+    "browseraudio>=0.3.0",
+]
 dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
