@@ -101,7 +101,7 @@ def _theorytab_chord_to_pitches(
 
     Handles type (triad / 7 / 9 / ...), suspensions, additions, omissions,
     alterations, borrowed scales, and secondary dominants. Returns the chord
-    in root position (no inversions).
+    in root position (no inversions). ``chord`` is not modified.
     """
     # Build chord scale degrees
     chord_degrees = set(range(1, chord["type"] + 1, 2))
@@ -152,15 +152,16 @@ def _theorytab_chord_to_pitches(
     major_scale_intervals = _cumulative_intervals(
         _THEORYTAB_SCALE_NAME_TO_PITCH_INTERVALS["major"]
     )
+    root = chord["root"]
     if chord["applied"] > 0:
-        key_tonic_pc = (key_tonic_pc + key_scale_intervals[chord["root"] - 1]) % 12
-        chord["root"] = chord["applied"]
+        key_tonic_pc = (key_tonic_pc + key_scale_intervals[root - 1]) % 12
+        root = chord["applied"]
         key_scale_intervals = major_scale_intervals
 
     # Convert scale degrees to pitch offsets
     chord_degree_to_interval = {}
     for d in chord_degrees_list:
-        d_abs = (chord["root"] - 1) + (d - 1)
+        d_abs = (root - 1) + (d - 1)
         interval = key_scale_intervals[d_abs % 7]
         interval += 12 * (d_abs // 7)
         chord_degree_to_interval[d] = interval
@@ -260,6 +261,7 @@ def theorytab_json_to_score(
     song_data: dict,
     *,
     durations_in_beats: bool = False,
+    harmony_as_notes: bool = True,
     melody_octave: int = 5,
     harmony_octave: int = 4,
 ) -> Tuple[Metronome, Score, Score]:
@@ -269,9 +271,10 @@ def theorytab_json_to_score(
     with the returned :class:`BasicMetronome` when rendering so beats are
     converted to seconds.
 
-    Chord events are emitted as one :class:`Event` per chord tone in
-    root position, each with a ``"pitch"`` kwarg — so a triad at beat 4
-    becomes three events sharing ``time == 4.0``.
+    By default, chord events are emitted as one :class:`Event` per chord
+    tone in root position, each with a ``"pitch"`` kwarg — so a triad at
+    beat 4 becomes three events sharing ``time == 4.0``. Set
+    ``harmony_as_notes=False`` for one event per chord instead.
 
     Args:
         song_data: TheoryTab JSON (as returned by :func:`fetch_theorytab_json`).
@@ -279,6 +282,12 @@ def theorytab_json_to_score(
             ``kwargs["duration"]`` is converted to **seconds** via the
             song's tempo. If ``True``, durations stay in beats and the
             instrument is responsible for any further conversion.
+        harmony_as_notes: If ``True`` (default), the harmony score holds one
+            event per chord tone, with kwargs ``{"duration", "pitch"}``. If
+            ``False``, it holds one event per chord, with kwargs
+            ``{"duration", "root", "intervals", "inversion"}`` — ``root`` is
+            the root's MIDI pitch, ``intervals`` are the semitone gaps
+            between successive chord tones in root position.
         melody_octave: Octave offset added to melody pitches.
         harmony_octave: Octave offset added to harmony pitches.
 
@@ -339,11 +348,24 @@ def theorytab_json_to_score(
         if not durations_in_beats:
             duration = metronome.tick_to_seconds(duration)
         pitches = _theorytab_chord_to_pitches(chord, key)
-        for pitch in pitches:
+        if harmony_as_notes:
+            for pitch in pitches:
+                harmony.append(
+                    Event(
+                        beat,
+                        {"duration": duration, "pitch": pitch + harmony_octave * 12},
+                    )
+                )
+        else:
             harmony.append(
                 Event(
                     beat,
-                    {"duration": duration, "pitch": pitch + harmony_octave * 12},
+                    {
+                        "duration": duration,
+                        "root": pitches[0] + harmony_octave * 12,
+                        "intervals": list(np.diff(pitches)),
+                        "inversion": chord["inversion"],
+                    },
                 )
             )
     harmony.sort(key=lambda e: e.time)
