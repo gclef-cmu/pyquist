@@ -11,3 +11,4 @@ CACHE_DIR = CACHE_DIR.resolve()
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 TEST_DATA_DIR = LIB_DIR / "test_data"
+TEST_SOUND = TEST_DATA_DIR / "232009__danmitch3ll__xylophone-sweep.wav"
