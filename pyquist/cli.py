@@ -7,6 +7,7 @@ and audio loading lives in :mod:`pyquist.audio` / :mod:`pyquist.web`.
 
 import argparse
 
+from . import __version__
 from .audio import Audio
 from .device import (
     play,
@@ -51,6 +52,9 @@ def _cmd_freesound(args: argparse.Namespace) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pyquist", description="Pyquist command-line interface."
+    )
+    parser.add_argument(
+        "--version", "-v", action="version", version=f"pyquist {__version__}"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
