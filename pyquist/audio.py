@@ -386,6 +386,39 @@ class Audio:
             f"Cannot convert audio with {self.num_channels} channels to stereo."
         )
 
+    def pan(self, position: float = 0.0, *, in_place: bool = True) -> "Audio":
+        """Pans stereo audio to ``position`` using an equal-power pan law.
+
+        Channel gains are ``cos(theta)`` and ``sin(theta)`` for
+        ``theta = (position + 1) * pi / 4``, so the total power is the same at
+        every position. Mono audio must be widened first, e.g.
+        ``audio.as_stereo().pan(1.0)``.
+
+        Args:
+            position: Stereo position in ``[-1.0, 1.0]``. ``-1.0`` is hard
+                left, ``0.0`` (default) is center, ``1.0`` is hard right.
+            in_place: If ``True`` (default), modifies and returns ``self``.
+                If ``False``, returns a new ``Audio`` and leaves the original
+                untouched.
+
+        Raises:
+            ValueError: If ``position`` is outside ``[-1.0, 1.0]``, or if the
+                audio is not stereo.
+        """
+        position = float(position)
+        if not -1.0 <= position <= 1.0:
+            raise ValueError("position must be in [-1.0, 1.0].")
+        if self.num_channels != 2:
+            raise ValueError(
+                f"Cannot pan audio with {self.num_channels} channels (stereo only)."
+            )
+        theta = (position + 1.0) * (np.pi / 4.0)
+        gains = np.array([np.cos(theta), np.sin(theta)], dtype=np.float32)
+        if in_place:
+            self._samples *= gains
+            return self
+        return Audio(self._samples * gains, sample_rate=self._sample_rate)
+
     def resample(self, new_sample_rate: int, **kwargs) -> "Audio":
         """Returns a new ``Audio`` resampled to ``new_sample_rate``.
 

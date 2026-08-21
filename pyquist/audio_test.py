@@ -101,11 +101,17 @@ class TestAudio(unittest.TestCase):
             Audio.concatenate([])
         with self.assertRaises(ValueError):
             Audio.concatenate(
-                [Audio(np.ones(3), sample_rate=44100), Audio(np.ones(3), sample_rate=22050)]
+                [
+                    Audio(np.ones(3), sample_rate=44100),
+                    Audio(np.ones(3), sample_rate=22050),
+                ]
             )
         with self.assertRaises(ValueError):
             Audio.concatenate(
-                [Audio(np.ones((3, 1)), sample_rate=44100), Audio(np.ones((3, 2)), sample_rate=44100)]
+                [
+                    Audio(np.ones((3, 1)), sample_rate=44100),
+                    Audio(np.ones((3, 2)), sample_rate=44100),
+                ]
             )
 
     def test_from_file_wav(self):
@@ -241,6 +247,58 @@ class TestAudio(unittest.TestCase):
         multi4 = Audio(np.zeros((10, 4), dtype=np.float32), sample_rate=44100)
         with self.assertRaises(ValueError):
             multi4.as_stereo()
+
+    def test_pan(self):
+        stereo = Audio(np.ones((10, 2), dtype=np.float32), sample_rate=44100)
+
+        # Center: equal gain of -3 dB in both channels.
+        centered = stereo.pan(in_place=False)
+        self.assertEqual(centered.shape, (10, 2))
+        self.assertEqual(centered.samples.dtype, np.float32)
+        self.assertEqual(centered.sample_rate, 44100)
+        self.assertTrue(np.allclose(centered.samples, np.sqrt(0.5), atol=1e-6))
+
+        # Hard left/right mute the opposite channel and pass the other through.
+        left = stereo.pan(-1.0, in_place=False)
+        self.assertTrue(np.allclose(left.samples[:, 0], 1.0, atol=1e-6))
+        self.assertTrue(np.allclose(left.samples[:, 1], 0.0, atol=1e-6))
+        right = stereo.pan(1.0, in_place=False)
+        self.assertTrue(np.allclose(right.samples[:, 0], 0.0, atol=1e-6))
+        self.assertTrue(np.allclose(right.samples[:, 1], 1.0, atol=1e-6))
+
+        # Equal power: the summed power is constant across positions.
+        for position in [-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0]:
+            panned = stereo.pan(position, in_place=False)
+            self.assertAlmostEqual(
+                float((panned.samples**2).sum()),
+                float((stereo.samples**2).sum()) / 2,
+                places=5,
+            )
+
+        # in_place=False above didn't mutate the source; in_place=True does.
+        self.assertTrue(np.allclose(stereo.samples, 1.0))
+        self.assertIs(stereo.pan(1.0), stereo)
+        self.assertTrue(np.allclose(stereo.samples[:, 0], 0.0, atol=1e-6))
+        self.assertTrue(np.allclose(stereo.samples[:, 1], 1.0, atol=1e-6))
+
+        # Mono is widened first: as_stereo().pan() is a full-amplitude hard pan.
+        mono = Audio(np.ones((10, 1), dtype=np.float32), sample_rate=44100)
+        panned = mono.as_stereo().pan(1.0)
+        self.assertTrue(np.allclose(panned.samples[:, 0], 0.0, atol=1e-6))
+        self.assertTrue(np.allclose(panned.samples[:, 1], 1.0, atol=1e-6))
+
+        # Out-of-range positions raise.
+        with self.assertRaises(ValueError):
+            stereo.pan(-1.5)
+        with self.assertRaises(ValueError):
+            stereo.pan(1.5)
+
+        # Non-stereo: raises
+        with self.assertRaises(ValueError):
+            mono.pan()
+        multi = Audio(np.zeros((10, 3), dtype=np.float32), sample_rate=44100)
+        with self.assertRaises(ValueError):
+            multi.pan()
 
     def test_segment(self):
         sr = 1000
