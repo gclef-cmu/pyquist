@@ -5,7 +5,7 @@ Pyquist documentation
 in Python and NumPy**. It is designed for learning and is the teaching library
 for CMU's 15-322 *Intro to Computer Music*.
 
-* Source code: https://github.com/gclef-cmu/pyquist
+* Source code and README: https://github.com/gclef-cmu/pyquist
 * Hands-on walkthrough:
   `HelloPyquist notebook <https://github.com/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb>`_
   (or `run it in Colab
@@ -29,7 +29,9 @@ macOS
    brew install git python@3.10          # or 3.11, 3.12, 3.13
    python3.10 -m venv .venv
    source .venv/bin/activate
-   pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+   pip install --upgrade pyquist
+   pyquist -v
+   python -c "import pyquist as pq; pq.play(pq.Audio.from_file(pq.paths.TEST_SOUND))"
 
 If ``pq.play(...)`` is silent, give Terminal (or your IDE) microphone/audio
 access in **System Settings → Privacy & Security → Microphone**.
@@ -50,7 +52,9 @@ wraps:
 
    python3 -m venv .venv
    source .venv/bin/activate
-   pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+   pip install --upgrade pyquist
+   pyquist -v
+   python -c "import pyquist as pq; pq.play(pq.Audio.from_file(pq.paths.TEST_SOUND))"
 
 Windows
 ~~~~~~~
@@ -63,7 +67,9 @@ Install `Python <https://www.python.org/downloads/>`_ (3.10 or later, with
 
    python -m venv .venv
    .venv\Scripts\activate.bat
-   pip install --upgrade git+https://github.com/gclef-cmu/pyquist.git
+   pip install --upgrade pyquist
+   pyquist -v
+   python -c "import pyquist as pq; pq.play(pq.Audio.from_file(pq.paths.TEST_SOUND))"
 
 
 Key API
