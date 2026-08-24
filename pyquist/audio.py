@@ -32,7 +32,8 @@ objects::
     clip.normalize(peak_dbfs=-1.0)
     clip.write("clip.wav")
 
-See :meth:`Audio.zeros` for an empty destination buffer and
+See :meth:`Audio.zeros` for a silent destination buffer (or
+:meth:`Audio.empty` for an uninitialized one) and
 :meth:`Audio.concatenate` to join buffers end to end. To turn musical events
 into ``Audio``, see :mod:`pyquist.score`.
 """
@@ -86,16 +87,19 @@ class Audio:
         self.sample_rate = sample_rate
 
     @classmethod
-    def zeros(
+    def empty(
         cls,
         num_samples: int,
         num_channels: int,
         sample_rate: Optional[int] = None,
     ) -> "Audio":
-        """Creates a silent (zero-filled) ``Audio`` of the given shape.
+        """Creates an uninitialized ``Audio`` of the given shape.
 
-        Useful as a destination buffer that you fill in via ``audio.samples``
-        or via in-place arithmetic.
+        The samples are whatever happened to be in memory — arbitrary values,
+        possibly including ``inf`` and ``nan``. Only use this as a destination
+        buffer that you overwrite in full (e.g. by assigning into
+        ``audio.samples``); if you intend to accumulate into it with in-place
+        arithmetic, or to leave any of it untouched, use :meth:`zeros`.
 
         Args:
             num_samples: Number of samples per channel. Must be ``>= 0``.
@@ -108,9 +112,32 @@ class Audio:
         if num_channels < 0:
             raise ValueError("num_channels must be non-negative.")
         return cls(
-            np.zeros((num_samples, num_channels), dtype=np.float32),
+            np.empty((num_samples, num_channels), dtype=np.float32),
             sample_rate=sample_rate,
         )
+
+    @classmethod
+    def zeros(
+        cls,
+        num_samples: int,
+        num_channels: int,
+        sample_rate: Optional[int] = None,
+    ) -> "Audio":
+        """Creates a silent (zero-filled) ``Audio`` of the given shape.
+
+        Useful as a destination buffer that you fill in via ``audio.samples``
+        or via in-place arithmetic. Same arguments and validation as
+        :meth:`empty`, but the samples start at silence.
+
+        Args:
+            num_samples: Number of samples per channel. Must be ``>= 0``.
+            num_channels: Number of channels (1 for mono, 2 for stereo).
+                Must be ``>= 0``.
+            sample_rate: Optional sample rate in Hz.
+        """
+        audio = cls.empty(num_samples, num_channels, sample_rate=sample_rate)
+        audio.clear()
+        return audio
 
     @classmethod
     def from_file(cls, file: Union[str, pathlib.Path, IO]) -> "Audio":
