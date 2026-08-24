@@ -68,6 +68,20 @@ class TestAudio(unittest.TestCase):
         with self.assertRaises(TypeError):
             Audio(np.zeros((10, 2), dtype=np.float32), sample_rate=44100.0)  # type: ignore[arg-type]
 
+    def test_empty_classmethod(self):
+        audio = Audio.empty(10, 2, sample_rate=44100)
+        self.assertEqual(audio.shape, (10, 2))
+        self.assertEqual(audio.samples.dtype, np.float32)
+        self.assertEqual(audio.sample_rate, 44100)
+
+        audio = Audio.empty(10, 2)
+        self.assertIsNone(audio.sample_rate)
+
+        with self.assertRaises(ValueError):
+            Audio.empty(-1, 2)
+        with self.assertRaises(ValueError):
+            Audio.empty(10, -1)
+
     def test_zeros_classmethod(self):
         audio = Audio.zeros(10, 2, sample_rate=44100)
         self.assertEqual(audio.shape, (10, 2))
