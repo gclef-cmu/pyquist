@@ -10,9 +10,9 @@ import sys
 import time
 from typing import Any, Optional, Tuple, Union
 
+import numpy as np
 import sounddevice as sd
 import tqdm
-import numpy as np
 
 from .audio import Audio
 from .paths import CACHE_DIR
@@ -131,7 +131,13 @@ def play(
             when called from a notebook. Useful when you want the audio
             played through the OS audio output rather than as an inline
             player widget.
+
+    Raises:
+        ValueError: If ``audio.sample_rate`` is ``None``.
     """
+    if audio.sample_rate is None:
+        raise ValueError("sample_rate is None; cannot play audio.")
+
     if normalize:
         audio = audio.normalize(in_place=False)
     audio = audio.clip(in_place=False)
@@ -173,7 +179,7 @@ def record(
     # :mod:`sounddevice` is not available when running in browser, handle separately.
     if _in_browser():
         return _record_in_browser(duration)
-    
+
     device_info = sd.query_devices(sd.default.device[0])
     sample_rate = round(device_info["default_samplerate"])
     num_channels = device_info["max_input_channels"]
