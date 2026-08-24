@@ -3,9 +3,10 @@ import io
 import json
 import tempfile
 import unittest
-import numpy as np
 from pathlib import Path
 from unittest import mock
+
+import numpy as np
 
 from . import device
 
@@ -445,6 +446,20 @@ class TestPlayDispatch(unittest.TestCase):
             mock_play.assert_not_called()
             fake_audio_widget.assert_called_once()
             fake_display.assert_called_once()
+
+    def test_missing_sample_rate_raises(self):
+        import numpy as np
+
+        from .audio import Audio
+
+        audio = Audio(np.zeros(100, dtype=np.float32))  # no sample_rate
+        with (
+            mock.patch.object(device, "_in_ipython_notebook", return_value=False),
+            mock.patch.object(device.sd, "play") as mock_play,
+        ):
+            with self.assertRaises(ValueError):
+                device.play(audio)
+            mock_play.assert_not_called()
 
     def test_force_sounddevice_overrides_notebook(self):
         audio = self._make_audio()
