@@ -22,9 +22,11 @@ from .web.freesound import fetch_freesound
 
 
 def _cmd_devices(args: argparse.Namespace) -> None:
-    del args
-    set_input_device(update_default=True)
-    set_output_device(update_default=True)
+    # No kind given means both, one after the other.
+    if args.kind in (None, "in"):
+        set_input_device(update_default=True)
+    if args.kind in (None, "out"):
+        set_output_device(update_default=True)
     print("Saved as default for future pyquist sessions.")
 
 
@@ -32,7 +34,7 @@ def _cmd_play(args: argparse.Namespace) -> None:
     # "test" is a shorthand for the bundled sample, so users can check that
     # audio output works without having an audio file on hand.
     if args.input.strip().lower() == "test":
-        audio = Audio.from_file(TEST_SOUND).segment(duration=1.0)
+        audio = Audio.from_file(TEST_SOUND).as_mono().segment(duration=1.0)
         audio *= np.linspace(1.0, 0.0, audio.num_samples)[:, np.newaxis]
     else:
         audio = Audio.from_file(args.input)
@@ -70,6 +72,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_devices = subparsers.add_parser(
         "devices", help="Interactively select default input and output devices."
+    )
+    p_devices.add_argument(
+        "kind",
+        nargs="?",
+        type=lambda s: {"input": "in", "output": "out"}.get(s.lower(), s.lower()),
+        choices=["in", "out"],
+        help=(
+            "Select only the input ('in' / 'input') or only the output "
+            "('out' / 'output') device. Omit to select both."
+        ),
     )
     p_devices.set_defaults(func=_cmd_devices)
 
