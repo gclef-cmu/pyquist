@@ -7,6 +7,8 @@ and audio loading lives in :mod:`pyquist.audio` / :mod:`pyquist.web`.
 
 import argparse
 
+import numpy as np
+
 from . import __version__
 from .audio import Audio
 from .device import (
@@ -15,6 +17,7 @@ from .device import (
     set_input_device,
     set_output_device,
 )
+from .paths import TEST_SOUND
 from .web.freesound import fetch_freesound
 
 
@@ -26,7 +29,14 @@ def _cmd_devices(args: argparse.Namespace) -> None:
 
 
 def _cmd_play(args: argparse.Namespace) -> None:
-    play(Audio.from_file(args.input))
+    # "test" is a shorthand for the bundled sample, so users can check that
+    # audio output works without having an audio file on hand.
+    if args.input.strip().lower() == "test":
+        audio = Audio.from_file(TEST_SOUND).segment(duration=1.0)
+        audio *= np.linspace(1.0, 0.0, audio.num_samples)[:, np.newaxis]
+    else:
+        audio = Audio.from_file(args.input)
+    play(audio)
 
 
 def _cmd_record(args: argparse.Namespace) -> None:
@@ -64,7 +74,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_devices.set_defaults(func=_cmd_devices)
 
     p_play = subparsers.add_parser("play", help="Play an audio file.")
-    p_play.add_argument("input", help="Path to the audio file.")
+    p_play.add_argument(
+        "input",
+        help="Path to the audio file, or 'test' for the bundled test sound.",
+    )
     p_play.set_defaults(func=_cmd_play)
 
     p_record = subparsers.add_parser("record", help="Record audio.")
