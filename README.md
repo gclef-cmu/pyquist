@@ -112,10 +112,11 @@ pre-commit install
 
 ### Pick default audio devices
 
-Once installed, the `pyquist` CLI lets you choose persistent default input/output devices (handy for laptops with multiple interfaces):
+Once installed, the `pyquist` CLI (also available as `pq`) lets you choose persistent default input/output devices (handy for laptops with multiple interfaces):
 
 ```sh
 pyquist devices
+pyquist play test
 ```
 
 ### Run notebooks

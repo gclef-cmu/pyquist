@@ -61,6 +61,7 @@ Issues = "https://github.com/gclef-cmu/pyquist/issues"
 
 [project.scripts]
 pyquist = "pyquist.cli:main"
+pq = "pyquist.cli:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "pyquist.__version__" }
