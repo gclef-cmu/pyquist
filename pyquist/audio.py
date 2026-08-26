@@ -25,12 +25,13 @@ in-place variants), all returning ``Audio``::
     mix = riff + drums[: len(riff)]  # sum the overlapping region
     mix *= 0.5  # halve the amplitude in place
 
-On top of that it offers music-specific helpers that return new ``Audio``
-objects::
+On top of that it offers music-specific helpers. Some derive a new ``Audio``
+and leave the original alone; others (``normalize``, ``clip``, ``pan``) adjust
+levels in place by default, with ``in_place=False`` to get a copy instead::
 
-    clip = mix.as_mono().segment(offset=1.0, duration=3.0).resample(8000)
-    clip.normalize(peak_dbfs=-1.0)
-    clip.write("clip.wav")
+    excerpt = mix.as_mono().segment(offset=1.0, duration=3.0).resample(8000)
+    excerpt.normalize(peak_dbfs=-1.0)  # in place
+    excerpt.write("excerpt.wav")
 
 See :meth:`Audio.zeros` for a silent destination buffer (or
 :meth:`Audio.empty` for an uninitialized one) and
@@ -68,6 +69,8 @@ class Audio:
         >>> audio = pq.Audio(np.sin(2 * np.pi * 440 * t), sample_rate=sr)
         >>> pq.play(audio)
     """
+
+    # --- Construction -------------------------------------------------------
 
     def __init__(
         self,
@@ -191,6 +194,15 @@ class Audio:
         samples = np.concatenate([a.samples for a in audios], axis=0)
         return cls(samples, sample_rate=sample_rates.pop())
 
+    def copy(self) -> "Audio":
+        """Returns a deep copy of this ``Audio``.
+
+        The returned ``Audio`` owns a fresh copy of the sample array, so
+        in-place mutations of either one leave the other untouched.
+        ``sample_rate`` is carried over.
+        """
+        return Audio(self._samples.copy(), sample_rate=self._sample_rate)
+
     # --- Core attributes ----------------------------------------------------
 
     @property
@@ -261,7 +273,7 @@ class Audio:
             raise ValueError(f"sample_rate must be positive, got {value}.")
         self._sample_rate = int(value)
 
-    # --- Shape-derived properties ------------------------------------------
+    # --- Derived properties -------------------------------------------------
 
     @property
     def num_samples(self) -> int:
@@ -297,7 +309,7 @@ class Audio:
             return 0.0
         return float(np.abs(self._samples).max())
 
-    # --- Mutation methods ---------------------------------------------------
+    # --- In-place methods ---------------------------------------------------
 
     def clear(self) -> None:
         """Fills the audio with silence (zeros) in place.
@@ -305,41 +317,6 @@ class Audio:
         Shape, dtype, and ``sample_rate`` are unchanged.
         """
         self._samples.fill(0.0)
-
-    def segment(
-        self,
-        *,
-        offset: Optional[float] = None,
-        duration: Optional[float] = None,
-    ) -> "Audio":
-        """Returns a new ``Audio`` containing a time-slice of this one.
-
-        Both ``offset`` and ``duration`` are in seconds and require
-        ``sample_rate`` to be set. Out-of-range values are clamped: a negative
-        ``offset`` is treated as zero, and a ``duration`` that runs past the
-        end is truncated. With both arguments ``None`` this is a no-op that
-        returns ``self``.
-
-        Args:
-            offset: Start time in seconds. Defaults to the beginning.
-            duration: Length in seconds. Defaults to the rest of the audio.
-
-        Returns:
-            A new ``Audio`` carrying the same ``sample_rate`` as ``self``.
-        """
-        if offset is None and duration is None:
-            return self
-        if self._sample_rate is None:
-            raise ValueError("segment() requires a sample_rate.")
-        start = max(0, int((offset or 0.0) * self._sample_rate))
-        end = (
-            self.num_samples
-            if duration is None
-            else start + int(duration * self._sample_rate)
-        )
-        start = min(start, self.num_samples)
-        end = max(start, min(end, self.num_samples))
-        return Audio(self._samples[start:end, :], sample_rate=self._sample_rate)
 
     def normalize(self, *, peak_dbfs: float = 0.0, in_place: bool = True) -> "Audio":
         """Scales the audio so its peak amplitude matches ``peak_dbfs``.
@@ -384,35 +361,6 @@ class Audio:
             return self
         return Audio(clipped, sample_rate=self._sample_rate)
 
-    def as_mono(self) -> "Audio":
-        """Returns a mono (1-channel) version of the audio.
-
-        Multi-channel audio is mixed down by averaging across channels
-        (mean, not sum), which preserves perceived loudness without risking
-        clipping. If the audio is already mono, returns ``self`` (no copy).
-        """
-        if self.num_channels == 1:
-            return self
-        mono = self._samples.mean(axis=1, keepdims=True).astype(np.float32)
-        return Audio(mono, sample_rate=self._sample_rate)
-
-    def as_stereo(self) -> "Audio":
-        """Returns a stereo (2-channel) version of the audio.
-
-        Mono audio is duplicated across both channels (the same signal in
-        L and R). Stereo audio is returned as ``self`` (no copy). Audio with
-        3 or more channels raises ``ValueError`` — this method does not try
-        to guess a downmix.
-        """
-        if self.num_channels == 2:
-            return self
-        if self.num_channels == 1:
-            stereo = np.repeat(self._samples, 2, axis=1)
-            return Audio(stereo, sample_rate=self._sample_rate)
-        raise ValueError(
-            f"Cannot convert audio with {self.num_channels} channels to stereo."
-        )
-
     def pan(self, position: float = 0.0, *, in_place: bool = True) -> "Audio":
         """Pans stereo audio to ``position`` using an equal-power pan law.
 
@@ -446,6 +394,72 @@ class Audio:
             return self
         return Audio(self._samples * gains, sample_rate=self._sample_rate)
 
+    # --- Derived audio ------------------------------------------------------
+
+    def segment(
+        self,
+        *,
+        offset: Optional[float] = None,
+        duration: Optional[float] = None,
+    ) -> "Audio":
+        """Returns a new ``Audio`` containing a time-slice of this one.
+
+        Both ``offset`` and ``duration`` are in seconds and require
+        ``sample_rate`` to be set. Out-of-range values are clamped: a negative
+        ``offset`` is treated as zero, and a ``duration`` that runs past the
+        end is truncated. With both arguments ``None`` this is a no-op that
+        returns ``self``.
+
+        Args:
+            offset: Start time in seconds. Defaults to the beginning.
+            duration: Length in seconds. Defaults to the rest of the audio.
+
+        Returns:
+            A new ``Audio`` carrying the same ``sample_rate`` as ``self``.
+        """
+        if offset is None and duration is None:
+            return self
+        if self._sample_rate is None:
+            raise ValueError("segment() requires a sample_rate.")
+        start = max(0, int((offset or 0.0) * self._sample_rate))
+        end = (
+            self.num_samples
+            if duration is None
+            else start + int(duration * self._sample_rate)
+        )
+        start = min(start, self.num_samples)
+        end = max(start, min(end, self.num_samples))
+        return Audio(self._samples[start:end, :], sample_rate=self._sample_rate)
+
+    def as_mono(self) -> "Audio":
+        """Returns a mono (1-channel) version of the audio.
+
+        Multi-channel audio is mixed down by averaging across channels
+        (mean, not sum), which preserves perceived loudness without risking
+        clipping. If the audio is already mono, returns ``self`` (no copy).
+        """
+        if self.num_channels == 1:
+            return self
+        mono = self._samples.mean(axis=1, keepdims=True).astype(np.float32)
+        return Audio(mono, sample_rate=self._sample_rate)
+
+    def as_stereo(self) -> "Audio":
+        """Returns a stereo (2-channel) version of the audio.
+
+        Mono audio is duplicated across both channels (the same signal in
+        L and R). Stereo audio is returned as ``self`` (no copy). Audio with
+        3 or more channels raises ``ValueError`` — this method does not try
+        to guess a downmix.
+        """
+        if self.num_channels == 2:
+            return self
+        if self.num_channels == 1:
+            stereo = np.repeat(self._samples, 2, axis=1)
+            return Audio(stereo, sample_rate=self._sample_rate)
+        raise ValueError(
+            f"Cannot convert audio with {self.num_channels} channels to stereo."
+        )
+
     def resample(self, new_sample_rate: int, **kwargs) -> "Audio":
         """Returns a new ``Audio`` resampled to ``new_sample_rate``.
 
@@ -468,6 +482,8 @@ class Audio:
             self._samples, self._sample_rate, new_sample_rate, **kwargs
         )
         return Audio(resampled, sample_rate=new_sample_rate)
+
+    # --- File I/O -----------------------------------------------------------
 
     def write(self, file: Union[str, IO], **kwargs) -> None:
         """Writes the audio to a file via ``soundfile``.

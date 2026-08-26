@@ -15,11 +15,15 @@ import sounddevice as sd
 import tqdm
 
 from .audio import Audio
+from .helper import db_to_amplitude
 from .paths import CACHE_DIR
 
 _DEFAULTS_PATH = CACHE_DIR / "device_defaults.json"
 
 DeviceRef = Union[int, str]
+
+# Peak ceiling applied by ``play(safe=True)``.
+_SAFE_PEAK_DBFS = -18.0
 
 
 def set_input_device(
@@ -124,8 +128,8 @@ def play(
 
     Args:
         audio: The audio to play. Must have a ``sample_rate``.
-        safe: If True (default), attenuates the audio to -18 dBFS before
-            playback to protect ears against accidentally hot signals.
+        safe: If True (default), limits the peak amplitude to -18 dBFS
+            before playback to protect ears against accidentally hot signals.
         normalize: If True, normalizes the audio to 0 dBFS before playback.
         force_sounddevice: If True, always use sounddevice playback, even
             when called from a notebook. Useful when you want the audio
@@ -138,11 +142,14 @@ def play(
     if audio.sample_rate is None:
         raise ValueError("sample_rate is None; cannot play audio.")
 
+    # Copy up front so the caller's Audio is never touched, then do every
+    # level adjustment in place on that copy.
+    audio = audio.copy()
     if normalize:
-        audio = audio.normalize(in_place=False)
-    audio = audio.clip(in_place=False)
-    if safe:
-        audio = audio.normalize(peak_dbfs=-18.0, in_place=False)
+        audio.normalize()
+    audio.clip()
+    if safe and audio.peak_amplitude > db_to_amplitude(_SAFE_PEAK_DBFS):
+        audio.normalize(peak_dbfs=_SAFE_PEAK_DBFS)
 
     if not force_sounddevice and _in_ipython_notebook():
         # Imported lazily so headless / non-notebook usage doesn't need IPython.
