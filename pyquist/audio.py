@@ -297,6 +297,15 @@ class Audio:
             return 0.0
         return float(np.abs(self._samples).max())
 
+    def copy(self) -> "Audio":
+        """Returns a deep copy of this ``Audio``.
+
+        The returned ``Audio`` owns a fresh copy of the sample array, so
+        in-place mutations of either one leave the other untouched.
+        ``sample_rate`` is carried over.
+        """
+        return Audio(self._samples.copy(), sample_rate=self._sample_rate)
+
     # --- Mutation methods ---------------------------------------------------
 
     def clear(self) -> None:
