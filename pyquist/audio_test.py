@@ -1,4 +1,7 @@
+import pathlib
+import tempfile
 import unittest
+from io import BytesIO
 
 import numpy as np
 
@@ -540,6 +543,37 @@ class TestAudio(unittest.TestCase):
         self.assertIs(buffer.samples, backing)
         buffer[:] = 1.0
         self.assertTrue(np.all(backing == 1.0))
+
+    def test_write_channel_limits(self):
+        surround = Audio(np.zeros((100, 6), dtype=np.float32), sample_rate=44100)
+        stereo = Audio(np.zeros((100, 2), dtype=np.float32), sample_rate=44100)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+
+            # mp3 tops out at 2 channels, flac at 8.
+            for path in (tmp / "out.mp3", tmp / "out.MP3"):
+                with self.assertRaises(ValueError) as ctx:
+                    surround.write(path)
+                self.assertIn("MP3 supports at most 2 channels", str(ctx.exception))
+                self.assertIn("6", str(ctx.exception))
+                self.assertFalse(path.exists())
+            with self.assertRaises(ValueError):
+                Audio(np.zeros((100, 9), dtype=np.float32), sample_rate=44100).write(
+                    tmp / "out.flac"
+                )
+
+            # Formats without a low limit, and channel counts within a limit,
+            # are unaffected.
+            surround.write(tmp / "out.wav")
+            self.assertEqual(Audio.from_file(tmp / "out.wav").num_channels, 6)
+            stereo.write(tmp / "out.mp3")
+            self.assertEqual(Audio.from_file(tmp / "out.mp3").num_channels, 2)
+
+        # File-like destinations are checked via the explicit format kwarg.
+        with self.assertRaises(ValueError):
+            surround.write(BytesIO(), format="MP3")
+        surround.write(BytesIO(), format="WAV")
 
 
 if __name__ == "__main__":

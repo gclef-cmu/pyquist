@@ -50,6 +50,15 @@ import soxr
 
 from .helper import db_to_amplitude
 
+# Maximum channel count for the output formats people actually write from
+# pyquist that impose a low one. Everything else (WAV, AIFF, OGG, CAF, ...) is
+# left to libsndfile, which reports a channel count it can't handle with an
+# opaque "Format not recognised." error.
+_MAX_CHANNELS_BY_FORMAT = {
+    "MP3": 2,
+    "FLAC": 8,
+}
+
 
 class Audio:
     """A wrapper around a 2D float32 numpy array of audio samples.
@@ -494,11 +503,39 @@ class Audio:
         ``[-1.0, 1.0]`` will clip in fixed-point formats; consider calling
         :meth:`clip` or :meth:`normalize` first.
 
-        Raises ``ValueError`` if ``self.sample_rate`` is ``None``.
+        Raises ``ValueError`` if ``self.sample_rate`` is ``None``, or if the
+        target format cannot hold :attr:`num_channels` channels (``.mp3``
+        tops out at 2, ``.flac`` at 8); :meth:`as_mono` or a ``.wav``
+        destination gets around the latter.
         """
         if self._sample_rate is None:
             raise ValueError("Cannot write audio without a sample_rate.")
+        self._check_num_channels_writable(file, kwargs.get("format"))
         sf.write(file, self._samples, self._sample_rate, **kwargs)
+
+    def _check_num_channels_writable(self, file, format: Optional[str]) -> None:
+        """Raises ``ValueError`` if the target format can't hold our channels.
+
+        ``format`` is the explicit :func:`soundfile.write` keyword when the
+        caller passed one; otherwise the format is taken from the file
+        extension, the same way ``soundfile`` infers it. Unrecognized
+        formats are left alone — ``soundfile`` reports those itself.
+        """
+        if format is None:
+            name = getattr(file, "name", file)
+            if not isinstance(name, (str, pathlib.PurePath)):
+                return
+            format = pathlib.PurePath(name).suffix.lstrip(".")
+        format = format.upper()
+        max_channels = _MAX_CHANNELS_BY_FORMAT.get(format)
+        if max_channels is None or self.num_channels <= max_channels:
+            return
+        raise ValueError(
+            f"{format} supports at most {max_channels} "
+            f"channel{'' if max_channels == 1 else 's'}, but this audio has "
+            f"{self.num_channels}. Call .as_mono() first, or write to a "
+            f"format with no such limit (e.g. .wav)."
+        )
 
     # --- numpy interop ------------------------------------------------------
 
