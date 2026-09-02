@@ -1,4 +1,4 @@
-__version__ = "0.3.0"
+__version__ = "0.2.5"
 
 from .audio import Audio
 from .device import (
