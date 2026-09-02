@@ -25,6 +25,14 @@ in-place variants), all returning ``Audio``::
     mix = riff + drums[: len(riff)]  # sum the overlapping region
     mix *= 0.5  # halve the amplitude in place
 
+When slicing, **ints are sample numbers and floats are times in seconds** —
+``riff[10:100]`` is 90 samples, while ``riff[10.0:100.0]`` is 90 seconds
+(``int(10.0 * sample_rate)`` onward). Slicing by seconds requires a
+``sample_rate``::
+
+    intro = riff[:2.5]  # first 2.5 seconds
+    riff[0.0:0.1] = 0.0  # silence the first 100 ms
+
 On top of that it offers music-specific helpers. Some derive a new ``Audio``
 and leave the original alone; others (``normalize``, ``clip``, ``pan``) adjust
 levels in place by default, with ``in_place=False`` to get a copy instead::
@@ -413,32 +421,41 @@ class Audio:
     ) -> "Audio":
         """Returns a new ``Audio`` containing a time-slice of this one.
 
+        A named-argument spelling of slicing by seconds:
+        ``audio.segment(offset=1.0, duration=2.0)`` covers the same span as
+        ``audio[1.0:3.0]``, but takes a *duration* rather than an end time.
+
         Both ``offset`` and ``duration`` are in seconds and require
-        ``sample_rate`` to be set. Out-of-range values are clamped: a negative
-        ``offset`` is treated as zero, and a ``duration`` that runs past the
-        end is truncated. With both arguments ``None`` this is a no-op that
-        returns ``self``.
+        ``sample_rate`` to be set. Both must be non-negative; a ``duration``
+        that runs past the end is truncated.
 
         Args:
             offset: Start time in seconds. Defaults to the beginning.
+                Must be ``>= 0``.
             duration: Length in seconds. Defaults to the rest of the audio.
+                Must be ``>= 0``.
 
         Returns:
             A new ``Audio`` carrying the same ``sample_rate`` as ``self``.
+
+        Raises:
+            ValueError: If ``sample_rate`` is ``None`` while ``offset`` or
+                ``duration`` is given, or if either is negative.
         """
         if offset is None and duration is None:
             return self
         if self._sample_rate is None:
             raise ValueError("segment() requires a sample_rate.")
-        start = max(0, int((offset or 0.0) * self._sample_rate))
-        end = (
-            self.num_samples
-            if duration is None
-            else start + int(duration * self._sample_rate)
-        )
-        start = min(start, self.num_samples)
-        end = max(start, min(end, self.num_samples))
-        return Audio(self._samples[start:end, :], sample_rate=self._sample_rate)
+        if offset is not None and offset < 0:
+            raise ValueError(f"offset must be non-negative, got {offset}.")
+        if duration is not None and duration < 0:
+            raise ValueError(f"duration must be non-negative, got {duration}.")
+        segment = self
+        if offset is not None:
+            segment = segment[float(offset) :]  # type: ignore[misc]
+        if duration is not None:
+            segment = segment[: float(duration)]  # type: ignore[misc]
+        return segment
 
     def as_mono(self) -> "Audio":
         """Returns a mono (1-channel) version of the audio.
@@ -557,38 +574,107 @@ class Audio:
     def __len__(self) -> int:
         return self.num_samples
 
+    def _to_samples(self, bound):
+        """Converts one index or slice bound to samples: floats are seconds.
+
+        Anything that isn't a float passes through untouched, so int indexing
+        keeps its exact numpy behavior.
+        """
+        if not isinstance(bound, (float, np.floating)):
+            return bound
+        if self._sample_rate is None:
+            raise ValueError(
+                f"Indexing by time in seconds ({bound!r}) requires a "
+                f"sample_rate, but this Audio has sample_rate=None. Set "
+                f"audio.sample_rate, or index by int sample number instead."
+            )
+        return int(bound * self._sample_rate)
+
+    def _resolve_key(self, key):
+        """Rewrites seconds as sample indices on the sample axis of ``key``.
+
+        Only axis 0 is converted, since only it has a time interpretation;
+        the channel axis passes through to numpy, which takes ints alone.
+        Within one slice the bounds must agree — both seconds or both sample
+        numbers — so that ``audio[1:2.0]`` is an error rather than a silent
+        mix of units. A ``step`` is always a stride in samples.
+        """
+        if isinstance(key, tuple):
+            return (self._resolve_key(key[0]),) + key[1:] if key else key
+        if not isinstance(key, slice):
+            return self._to_samples(key)
+        bounds = [b for b in (key.start, key.stop) if b is not None]
+        if len({isinstance(b, (float, np.floating)) for b in bounds}) > 1:
+            raise TypeError(
+                f"Audio[...] cannot mix sample indices (int) and times in "
+                f"seconds (float) in one slice (got {key.start!r}:{key.stop!r}). "
+                f"Use floats for both bounds, or ints for both."
+            )
+        return slice(self._to_samples(key.start), self._to_samples(key.stop), key.step)
+
     def __getitem__(self, key) -> "Audio":
         """Returns a new ``Audio`` wrapping the indexed samples.
 
         Only patterns that preserve the ``(num_samples, num_channels)``
         layout are accepted — i.e., the sample axis (axis 0) must be
-        sliced, not collapsed to a single int. Examples (``audio`` has
+        sliced, not collapsed to a single index. Examples (``audio`` has
         shape ``(10000, 2)``)::
 
             audio[1000:2000]       # → Audio with shape (1000, 2)
             audio[:, 0]            # → Audio with shape (10000, 1)
             audio[1000:2000, 1:3]  # → Audio with shape (1000, 2)
 
-        Indexing axis 0 with a single ``int`` (``audio[1000]``,
-        ``audio[0, 0]``) is rejected with ``TypeError`` — it's ambiguous
-        as Audio, and almost always either a scalar read (use
-        ``audio.samples[i, j]``) or a length-1 slice (use
+        **Ints are samples; floats are seconds.** A float bound on the
+        sample axis is a time in seconds, converted to a sample index as
+        ``int(seconds * sample_rate)``. At ``sample_rate=44100``::
+
+            audio[10:100]          # samples 10 through 99 (90 samples)
+            audio[10.0:100.0]      # samples 441000 through 4409999
+            audio[1.0:2.0, :1]     # one second of the first channel
+            audio[1.5:, 0]         # left channel from 1.5 s to the end
+
+        The two axes are read independently, so seconds on the sample axis
+        combine freely with int indices on the channel axis. Only the sample
+        axis has a time interpretation; a float on the channel axis
+        (``audio[:, 0.0]``) is rejected by numpy, and a ``step`` is always a
+        stride in samples (``audio[1.0:2.0:2]`` is every other sample of that
+        second).
+
+        Slicing by seconds requires :attr:`sample_rate` to be set;
+        otherwise ``ValueError`` is raised. The two units can't be mixed
+        within one slice — ``audio[1:2.0]`` raises ``TypeError`` rather than
+        quietly reading ``1`` as a sample and ``2.0`` as a time.
+
+        Indexing axis 0 with a single number (``audio[1000]``,
+        ``audio[2.5]``, ``audio[0, 0]``) is rejected with ``TypeError`` —
+        it's ambiguous as Audio, and almost always either a scalar read
+        (use ``audio.samples[i, j]``) or a length-1 slice (use
         ``audio[i:i+1]``).
 
         The returned ``Audio`` is a view of the underlying samples when
         the key supports it, and carries the same ``sample_rate``.
         """
         first = key[0] if isinstance(key, tuple) and key else key
-        if isinstance(first, (int, np.integer)):
+        if isinstance(first, (int, np.integer, float, np.floating)):
             raise TypeError(
                 f"Audio[...] does not support indexing the sample axis with "
-                f"a single int (got {key!r}). Use audio.samples[...] for raw "
+                f"a single number (got {key!r}). Use audio.samples[...] for raw "
                 f"numpy access, or audio[i:i+1] for a length-1 Audio."
             )
-        return Audio(self._samples[key], sample_rate=self._sample_rate)
+        return Audio(
+            self._samples[self._resolve_key(key)], sample_rate=self._sample_rate
+        )
 
     def __setitem__(self, key, value) -> None:
-        self._samples[key] = value
+        """Writes ``value`` into the indexed samples.
+
+        Accepts the same keys as :meth:`__getitem__`, with floats on the
+        sample axis meaning seconds, plus single indices (writes have no
+        dim-collapse ambiguity)::
+
+            audio[1.0:2.0] = 0.0   # silence the second second
+        """
+        self._samples[self._resolve_key(key)] = value
 
     # --- Arithmetic ---------------------------------------------------------
 
