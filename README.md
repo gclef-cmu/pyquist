@@ -6,7 +6,7 @@
 
 Want to try it without installing anything? [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb)
 
-## Quick example
+## Quick examples
 
 ```python
 import numpy as np
@@ -22,7 +22,7 @@ pq.plot(audio)        # waveform
 pq.plot_spec(audio)   # spectrogram
 ```
 
-Loading and transforming:
+**Loading and transforming**:
 
 ```python
 from pyquist.paths import TEST_DATA_DIR
@@ -30,9 +30,24 @@ from pyquist.paths import TEST_DATA_DIR
 riff = pq.Audio.from_file(
     TEST_DATA_DIR / "388954__fullmetaljedi__blues-riff-in-g-nylon.wav"
 )
-clip = riff.segment(offset=5.0, duration=3.0).resample(8000)
+clip = riff[5.0:8.0].resample(8000)   # 3 second slice
 pq.play(clip)
 ```
+
+**Slicing by samples or by seconds**
+
+`int`s are sample numbers, `float`s are times in seconds*
+
+```python
+audio[10:100]         # samples 10 through 99 (90 samples)
+audio[10.0:100.0]     # seconds 10 through 100, i.e. samples int(10.0 * sr) onward
+audio[0.0:0.1] = 0.0  # silence the first 100 ms (writes work the same way)
+audio[:2.5]           # first 2.5 seconds
+audio[-1.0:]          # last second
+audio[1.0:2.0, 0]     # left channel, one second in
+```
+
+**Symbolic scores and instruments**
 
 Rendering a `Score` with a custom instrument. An instrument is called as `instrument(**event.kwargs)` — declare the kwargs you use and absorb the rest with `**kwargs`:
 

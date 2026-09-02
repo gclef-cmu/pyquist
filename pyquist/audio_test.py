@@ -344,10 +344,17 @@ class TestAudio(unittest.TestCase):
         self.assertEqual(seg.samples[0, 0], 250.0)
         self.assertEqual(seg.samples[-1, 0], 749.0)
 
-        # Negative offset clamps to 0
-        seg = audio.segment(offset=-1.0, duration=0.1)
-        self.assertEqual(seg.shape, (100, 1))
-        self.assertEqual(seg.samples[0, 0], 0.0)
+        # Negative offset or duration is an error, not a clamp.
+        with self.assertRaises(ValueError) as ctx:
+            audio.segment(offset=-1.0, duration=0.1)
+        self.assertIn("offset", str(ctx.exception))
+        with self.assertRaises(ValueError) as ctx:
+            audio.segment(duration=-0.1)
+        self.assertIn("duration", str(ctx.exception))
+
+        # Int arguments are seconds, same as floats.
+        self.assertEqual(audio.segment(duration=1).shape, (1000, 1))
+        self.assertEqual(audio.segment(offset=1).shape, (0, 1))
 
         # Duration past end is truncated
         seg = audio.segment(offset=0.8, duration=10.0)
@@ -423,6 +430,176 @@ class TestAudio(unittest.TestCase):
         sliced.samples[:] = 1.0
         self.assertTrue(np.all(audio.samples[2:5, :] == 1.0))
         self.assertTrue(np.all(audio.samples[0:2, :] == 0.0))
+
+    def test_indexing_by_seconds(self):
+        sr = 100
+        audio = Audio(np.arange(500, dtype=np.float32), sample_rate=sr)
+
+        # Floats are seconds: audio[1.0:3.0] == samples 100 through 299.
+        by_time = audio[1.0:3.0]
+        self.assertIsInstance(by_time, Audio)
+        self.assertEqual(by_time.shape, (200, 1))
+        self.assertEqual(by_time.sample_rate, sr)
+        self.assertTrue(np.array_equal(by_time.samples, audio.samples[100:300]))
+
+        # Ints stay sample numbers.
+        self.assertEqual(audio[1:3].shape, (2, 1))
+
+        # Open-ended and negative bounds behave like numpy on the converted
+        # sample indices.
+        self.assertTrue(np.array_equal(audio[:2.0].samples, audio.samples[:200]))
+        self.assertTrue(np.array_equal(audio[4.5:].samples, audio.samples[450:]))
+        self.assertTrue(np.array_equal(audio[-1.0:].samples, audio.samples[-100:]))
+
+        # Truncation toward zero, as int(seconds * sample_rate).
+        self.assertEqual(audio[0.0:1.999].shape, (199, 1))
+
+        # numpy floats work too.
+        self.assertEqual(audio[np.float32(1.0) : np.float32(2.0)].shape, (100, 1))
+
+        # Time slice on axis 0, channel index on axis 1.
+        stereo = Audio(np.zeros((500, 2), dtype=np.float32), sample_rate=sr)
+        self.assertEqual(stereo[1.0:2.0, 0].shape, (100, 1))
+
+        # Still a view of the parent.
+        stereo[1.0:2.0].samples[:] = 1.0
+        self.assertTrue(np.all(stereo.samples[100:200] == 1.0))
+
+    def test_indexing_by_seconds_with_channel_axis(self):
+        sr = 100
+        stereo = Audio(
+            np.arange(1000, dtype=np.float32).reshape(500, 2), sample_rate=sr
+        )
+
+        # Seconds on the sample axis mix freely with ints on the channel axis.
+        for key in [np.s_[1.0:2.0, :1], np.s_[1.0:2.0, 0], np.s_[1.0:2.0, 1:]]:
+            seg = stereo[key]
+            self.assertIsInstance(seg, Audio)
+            self.assertEqual(seg.shape, (100, 1))
+            self.assertEqual(seg.sample_rate, sr)
+        self.assertTrue(
+            np.array_equal(stereo[1.0:2.0, :1].samples, stereo.samples[100:200, :1])
+        )
+        self.assertTrue(
+            np.array_equal(stereo[1.0:2.0, 1].samples, stereo.samples[100:200, 1:2])
+        )
+        # Both channels, and an open-ended time bound.
+        self.assertEqual(stereo[1.0:2.0, :].shape, (100, 2))
+        self.assertEqual(stereo[4.0:, :1].shape, (100, 1))
+        # Writes take the same mixed key.
+        stereo[1.0:2.0, :1] = 0.0
+        self.assertTrue(np.all(stereo.samples[100:200, 0] == 0.0))
+        self.assertTrue(np.all(stereo.samples[100:200, 1] != 0.0))
+
+    def test_indexing_by_seconds_with_int_channel(self):
+        # An int on the channel axis picks one channel and keeps it as a
+        # channel, so the result is Audio shaped (n, 1) rather than 1-D.
+        sr = 100
+        audio = Audio(np.arange(2000, dtype=np.float32).reshape(500, 4), sample_rate=sr)
+
+        for channel in range(audio.num_channels):
+            seg = audio[1.0:2.0, channel]
+            self.assertIsInstance(seg, Audio)
+            self.assertEqual(seg.shape, (100, 1))
+            self.assertEqual(seg.sample_rate, sr)
+            self.assertTrue(
+                np.array_equal(
+                    seg.samples, audio.samples[100:200, channel : channel + 1]
+                )
+            )
+
+        # Negative channel indices count from the last channel.
+        self.assertTrue(
+            np.array_equal(audio[1.0:2.0, -1].samples, audio[1.0:2.0, 3].samples)
+        )
+
+        # Open-ended and negative time bounds combine with an int channel.
+        self.assertEqual(audio[:1.0, 2].shape, (100, 1))
+        self.assertEqual(audio[-1.0:, 1].shape, (100, 1))
+        self.assertTrue(
+            np.array_equal(audio[-1.0:, 1].samples, audio.samples[-100:, 1:2])
+        )
+
+        # Ints on both axes are unchanged: samples and a channel.
+        self.assertEqual(audio[100:200, 0].shape, (100, 1))
+
+        # Same span as the equivalent segment() call.
+        self.assertTrue(
+            np.array_equal(
+                audio[1.0:2.0, 0].samples,
+                audio.segment(offset=1.0, duration=1.0)[:, 0].samples,
+            )
+        )
+
+        # Still a view: writing through the result reaches the parent, and
+        # only in the indexed channel and time range.
+        audio[1.0:2.0, 0].samples[:] = -1.0
+        self.assertTrue(np.all(audio.samples[100:200, 0] == -1.0))
+        self.assertTrue(np.all(audio.samples[100:200, 1:] != -1.0))
+        self.assertTrue(np.all(audio.samples[:100, 0] != -1.0))
+
+        # Writes take an int channel directly, too.
+        audio[2.0:3.0, 2] = 0.0
+        self.assertTrue(np.all(audio.samples[200:300, 2] == 0.0))
+        self.assertTrue(np.all(audio.samples[200:300, 3] != 0.0))
+        self.assertTrue(np.all(audio.samples[300:, 2] != 0.0))
+
+    def test_indexing_channel_axis_rejects_seconds(self):
+        stereo = Audio(np.zeros((500, 2), dtype=np.float32), sample_rate=100)
+        # Only the sample axis is converted; the channel axis goes to numpy,
+        # which takes ints alone and rejects a float itself.
+        for key in [np.s_[:, 0.0], np.s_[:, 0.0:1.0], np.s_[1.0:2.0, 0.0:1.0]]:
+            with self.assertRaises((TypeError, IndexError)):
+                stereo[key]
+        with self.assertRaises((TypeError, IndexError)):
+            stereo[1.0:2.0, 0.0] = 0.0
+
+    def test_indexing_by_seconds_invalid(self):
+        audio = Audio(np.zeros((500, 1), dtype=np.float32), sample_rate=100)
+
+        # A bare float is a single index, which is rejected like a bare int.
+        with self.assertRaises(TypeError):
+            audio[1.0]
+        with self.assertRaises(TypeError):
+            audio[1.0, 0]
+
+        # Units can't be mixed within one slice.
+        with self.assertRaises(TypeError) as ctx:
+            audio[100:2.0]
+        self.assertIn("mix", str(ctx.exception))
+        with self.assertRaises(TypeError):
+            audio[1.0:200]
+
+        # A step is always a stride in samples, whatever the bounds are.
+        self.assertEqual(audio[1.0:2.0:2].shape, (50, 1))
+        self.assertEqual(audio[100:200:2].shape, (50, 1))
+        # A float step is numpy's to reject.
+        with self.assertRaises(TypeError):
+            audio[100:200:0.5]
+
+    def test_indexing_by_seconds_requires_sample_rate(self):
+        audio = Audio(np.zeros((500, 1), dtype=np.float32))
+        with self.assertRaises(ValueError) as ctx:
+            audio[1.0:2.0]
+        self.assertIn("sample_rate", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            audio[1.0:2.0] = 0.0
+        # Sample indexing still works without a sample rate.
+        self.assertEqual(audio[100:200].shape, (100, 1))
+
+    def test_setitem_by_seconds(self):
+        sr = 100
+        audio = Audio(np.ones((500, 1), dtype=np.float32), sample_rate=sr)
+        audio[1.0:2.0] = 0.0
+        self.assertTrue(np.all(audio.samples[100:200] == 0.0))
+        self.assertTrue(np.all(audio.samples[:100] == 1.0))
+        self.assertTrue(np.all(audio.samples[200:] == 1.0))
+        # In-place ops on a time slice flow through to the samples.
+        audio[3.0:4.0] *= 0.5
+        self.assertTrue(np.all(audio.samples[300:400] == 0.5))
+        # Writes may collapse the sample axis, so a scalar time is allowed.
+        audio[4.0] = 7.0
+        self.assertEqual(audio.samples[400, 0], 7.0)
 
     def test_setitem_and_inplace_ops(self):
         # __setitem__ is unrestricted (writes don't have the dim-collapse
