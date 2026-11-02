@@ -15,6 +15,7 @@ import sounddevice as sd
 import tqdm
 
 from .audio import Audio
+from .env import in_browser, in_ipython_notebook
 from .helper import db_to_amplitude
 from .paths import CACHE_DIR
 
@@ -22,8 +23,8 @@ _DEFAULTS_PATH = CACHE_DIR / "device_defaults.json"
 
 DeviceRef = Union[int, str]
 
-# Peak ceiling applied by ``play(safe=True)``.
-_SAFE_PEAK_DBFS = -18.0
+# Peak ceiling applied by ``play(safe=True)`` and ``Stream(safe=True)``.
+SAFE_PEAK_DBFS = -20.0
 
 
 def set_input_device(
@@ -80,36 +81,21 @@ def set_output_device(
         _save_defaults(defaults)
 
 
-def _in_ipython_notebook() -> bool:
-    """Returns True if running inside a notebook-style IPython kernel.
+def list_devices(kind: Optional[str] = None) -> None:
+    """Prints the available audio devices.
 
-    Anything that isn't plain Python or the IPython terminal REPL counts —
-    this covers Jupyter (``ZMQInteractiveShell``), Google Colab
-    (``google.colab._shell.Shell``), VSCode notebooks, and other kernel
-    hosts where inline display is the right playback path.
+    Each device is listed with the ID to pass to :func:`set_input_device` /
+    :func:`set_output_device`, and tagged ``[current]`` if it is selected for
+    this session and ``[default]`` if it is the persisted default.
+
+    Args:
+        kind: ``"input"`` or ``"output"`` to list only that kind; ``None``
+            (default) lists both.
     """
-    try:
-        from IPython import get_ipython  # type: ignore[import-not-found]
-    except ImportError:
-        return False
-    ipy = get_ipython()
-    if ipy is None:
-        return False
-    # The only IPython context where inline display ISN'T the right answer
-    # is the terminal REPL, which has its own audio output.
-    return ipy.__class__.__name__ != "TerminalInteractiveShell"
-
-
-def _in_browser() -> bool:
-    """Returns True if running inside a browser-hosted Python runtime.
-
-    Pyodide (and JupyterLite, which runs a Pyodide kernel) compiles
-    CPython to WebAssembly via Emscripten, so ``sys.platform`` reports
-    ``"emscripten"``. In these environments there is no OS audio device, so
-    capture and playback must go through the Web Audio API rather than
-    :mod:`sounddevice`.
-    """
-    return sys.platform == "emscripten"
+    if kind not in (None, "input", "output"):
+        raise ValueError(f"kind must be 'input', 'output', or None, got {kind!r}.")
+    for k in ("input", "output") if kind is None else (kind,):
+        _print_devices(k)
 
 
 def play(
@@ -128,8 +114,9 @@ def play(
 
     Args:
         audio: The audio to play. Must have a ``sample_rate``.
-        safe: If True (default), limits the peak amplitude to -18 dBFS
-            before playback to protect ears against accidentally hot signals.
+        safe: If True (default), limits the peak amplitude to
+            :data:`SAFE_PEAK_DBFS` (-20 dBFS) before playback to protect ears
+            against accidentally hot signals.
         normalize: If True, normalizes the audio to 0 dBFS before playback.
         force_sounddevice: If True, always use sounddevice playback, even
             when called from a notebook. Useful when you want the audio
@@ -148,10 +135,10 @@ def play(
     if normalize:
         audio.normalize()
     audio.clip()
-    if safe and audio.peak_amplitude > db_to_amplitude(_SAFE_PEAK_DBFS):
-        audio.normalize(peak_dbfs=_SAFE_PEAK_DBFS)
+    if safe and audio.peak_amplitude > db_to_amplitude(SAFE_PEAK_DBFS):
+        audio.normalize(peak_dbfs=SAFE_PEAK_DBFS)
 
-    if not force_sounddevice and _in_ipython_notebook():
+    if not force_sounddevice and in_ipython_notebook():
         # Imported lazily so headless / non-notebook usage doesn't need IPython.
         from IPython.display import Audio as IPythonAudio, display  # type: ignore[import-not-found] # noqa: I001
 
@@ -184,7 +171,7 @@ def record(
     """
 
     # :mod:`sounddevice` is not available when running in browser, handle separately.
-    if _in_browser():
+    if in_browser():
         return _record_in_browser(duration)
 
     device_info = sd.query_devices(sd.default.device[0])
@@ -292,16 +279,29 @@ def _prompt_device(kind: str, *, update_default: bool = False) -> Tuple[int, str
     the choice will be persisted (``update_default=True``) or applied for
     this session only.
     """
+    # Bail out cleanly if there are no devices of this kind — otherwise we'd
+    # print an empty listing and ask the user to pick anyway.
+    if not _print_devices(kind):
+        raise RuntimeError(f"No {kind} devices are available on this machine.")
+
+    label = f"default {kind}" if update_default else kind
+    choice = input(f"Select {label} device (ID or name): ").strip()
+    if choice.isdigit() or (choice.startswith("-") and choice[1:].isdigit()):
+        return _resolve_device(int(choice), kind)
+    return _resolve_device(choice, kind)
+
+
+def _print_devices(kind: str) -> bool:
+    """Prints the devices of the given kind, returning False if there are none."""
     devices = sd.query_devices()
     slot = 0 if kind == "input" else 1
 
-    # Find devices that match the requested kind. Bail out cleanly if none —
-    # otherwise we'd print an empty listing and ask the user to pick anyway.
     eligible = [
         (i, dev) for i, dev in enumerate(devices) if dev[f"max_{kind}_channels"] > 0
     ]
     if not eligible:
-        raise RuntimeError(f"No {kind} devices are available on this machine.")
+        print(f"No {kind} devices available.")
+        return False
 
     current_id = sd.default.device[slot]
 
@@ -323,12 +323,7 @@ def _prompt_device(kind: str, *, update_default: bool = False) -> Tuple[int, str
             tags.append("default")
         suffix = f" [{', '.join(tags)}]" if tags else ""
         print(f"  {i}: {dev['name']}{suffix}")
-
-    label = f"default {kind}" if update_default else kind
-    choice = input(f"Select {label} device (ID or name): ").strip()
-    if choice.isdigit() or (choice.startswith("-") and choice[1:].isdigit()):
-        return _resolve_device(int(choice), kind)
-    return _resolve_device(choice, kind)
+    return True
 
 
 def _set_device_slot(slot: int, device_id: int) -> None:

@@ -2,6 +2,7 @@ __version__ = "0.2.5"
 
 from .audio import Audio
 from .device import (
+    list_devices,
     play,
     record,
     set_input_device,
@@ -15,6 +16,7 @@ from .score import (
     Metronome,
     Score,
 )
+from .stream import Stream
 
 __all__ = [
     "__version__",
@@ -23,6 +25,7 @@ __all__ = [
     "Metronome",
     "Score",
     "Event",
+    "list_devices",
     "play",
     "plot",
     "plot_freq",
@@ -30,6 +33,7 @@ __all__ = [
     "record",
     "set_input_device",
     "set_output_device",
+    "Stream",
 ]
 
 

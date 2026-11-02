@@ -54,7 +54,28 @@ score = Score([
 pq.play(score.render(sine_instrument, metronome=BasicMetronome(bpm=120)))
 ```
 
-For a guided walkthrough — visualization, MIDI parsing, scores, instruments — open [`examples/HelloPyquist.ipynb`](examples/HelloPyquist.ipynb) or [run it in Colab](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb).
+Real-time audio with a `Stream`, which calls your function on each short block of audio as it plays. The callback fills `block` in place, at full scale: like `pq.play`, a stream is `safe=True` by default, which turns its output down to -20 dBFS.
+
+```python
+import time
+
+class Sine:
+    def __init__(self, frequency):
+        self.frequency = frequency
+        self.time = 0.0
+
+    def callback(self, block):
+        t = self.time + np.arange(len(block)) / block.sample_rate
+        block.samples[:, 0] = np.sin(2 * np.pi * self.frequency * t)
+        self.time += len(block) / block.sample_rate
+
+with pq.Stream(Sine(440).callback):
+    time.sleep(2.0)  # plays until the `with` block exits
+```
+
+With input channels, `block` arrives holding the microphone signal, so a callback that does nothing is a passthrough (use headphones): `pq.Stream(lambda block: None, num_input_channels=1)`.
+
+For a guided walkthrough — visualization, MIDI parsing, scores, instruments, a real-time piano — open [`examples/HelloPyquist.ipynb`](examples/HelloPyquist.ipynb) or [run it in Colab](https://colab.research.google.com/github/gclef-cmu/pyquist/blob/main/examples/HelloPyquist.ipynb).
 
 ## Installation
 
@@ -117,6 +138,13 @@ Once installed, the `pyquist` CLI (also available as `pq`) lets you choose persi
 ```sh
 pyquist devices
 pyquist play test
+```
+
+Or, from Python, for the current session only:
+
+```python
+pq.list_devices()
+pq.set_output_device("Speakers")  # device ID, or part of its name
 ```
 
 ### Run notebooks
