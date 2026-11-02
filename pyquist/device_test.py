@@ -194,6 +194,36 @@ class TestPromptDeviceAnnotations(unittest.TestCase):
         self.assertNotIn("[default]", out)
 
 
+class TestListDevices(unittest.TestCase):
+    def setUp(self):
+        _patch_sd(self)
+
+    def _run(self, *args):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            device.list_devices(*args)
+        return buf.getvalue()
+
+    def test_lists_both_kinds(self):
+        out = self._run()
+        self.assertIn("Available input devices:", out)
+        self.assertIn("Available output devices:", out)
+        self.assertIn("1: MacBook Speakers", out)
+
+    def test_one_kind(self):
+        out = self._run("input")
+        self.assertIn("0: MacBook Microphone", out)
+        self.assertNotIn("MacBook Speakers", out)
+
+    def test_no_devices_of_kind(self):
+        _patch_sd(self, devices=[_FAKE_DEVICES[1]])
+        self.assertIn("No input devices", self._run("input"))
+
+    def test_invalid_kind(self):
+        with self.assertRaises(ValueError):
+            device.list_devices("in")
+
+
 class TestNoDevicesAvailable(unittest.TestCase):
     """Behavior when the machine has zero (or zero of one kind of) devices."""
 
@@ -421,7 +451,7 @@ class TestPlayDispatch(unittest.TestCase):
     def test_uses_sounddevice_outside_notebook(self):
         audio = self._make_audio()
         with (
-            mock.patch.object(device, "_in_ipython_notebook", return_value=False),
+            mock.patch.object(device, "in_ipython_notebook", return_value=False),
             mock.patch.object(device.sd, "play") as mock_play,
             mock.patch.object(device.sd, "wait") as mock_wait,
         ):
@@ -438,7 +468,7 @@ class TestPlayDispatch(unittest.TestCase):
         fake_module.Audio = fake_audio_widget
         fake_module.display = fake_display
         with (
-            mock.patch.object(device, "_in_ipython_notebook", return_value=True),
+            mock.patch.object(device, "in_ipython_notebook", return_value=True),
             mock.patch.dict("sys.modules", {"IPython.display": fake_module}),
             mock.patch.object(device.sd, "play") as mock_play,
         ):
@@ -454,7 +484,7 @@ class TestPlayDispatch(unittest.TestCase):
 
         audio = Audio(np.zeros(100, dtype=np.float32))  # no sample_rate
         with (
-            mock.patch.object(device, "_in_ipython_notebook", return_value=False),
+            mock.patch.object(device, "in_ipython_notebook", return_value=False),
             mock.patch.object(device.sd, "play") as mock_play,
         ):
             with self.assertRaises(ValueError):
@@ -464,75 +494,12 @@ class TestPlayDispatch(unittest.TestCase):
     def test_force_sounddevice_overrides_notebook(self):
         audio = self._make_audio()
         with (
-            mock.patch.object(device, "_in_ipython_notebook", return_value=True),
+            mock.patch.object(device, "in_ipython_notebook", return_value=True),
             mock.patch.object(device.sd, "play") as mock_play,
             mock.patch.object(device.sd, "wait"),
         ):
             device.play(audio, force_sounddevice=True)
             mock_play.assert_called_once()
-
-
-class TestInIPythonNotebook(unittest.TestCase):
-    """``_in_ipython_notebook`` must recognise every flavour of notebook
-    kernel — Jupyter, Colab, etc. — so that ``play`` doesn't fall through
-    to a sounddevice call that would crash in browser-hosted environments
-    with no audio device."""
-
-    def _fake_ipython_module(self, shell_class_name: str):
-        """Returns a fake ``IPython`` module whose ``get_ipython()`` yields a
-        shell of the given class name."""
-        # A real class (not MagicMock) is needed so .__class__.__name__ works.
-        shell_cls = type(shell_class_name, (), {})
-        fake_ipython = mock.MagicMock()
-        fake_ipython.get_ipython.return_value = shell_cls()
-        return fake_ipython
-
-    def test_jupyter_kernel_detected(self):
-        with mock.patch.dict(
-            "sys.modules", {"IPython": self._fake_ipython_module("ZMQInteractiveShell")}
-        ):
-            self.assertTrue(device._in_ipython_notebook())
-
-    def test_colab_kernel_detected(self):
-        # Google Colab's shell is `google.colab._shell.Shell`. The class name
-        # alone is enough to distinguish from the terminal REPL.
-        with mock.patch.dict(
-            "sys.modules", {"IPython": self._fake_ipython_module("Shell")}
-        ):
-            self.assertTrue(device._in_ipython_notebook())
-
-    def test_terminal_repl_not_detected(self):
-        with mock.patch.dict(
-            "sys.modules",
-            {"IPython": self._fake_ipython_module("TerminalInteractiveShell")},
-        ):
-            self.assertFalse(device._in_ipython_notebook())
-
-    def test_no_active_kernel_not_detected(self):
-        fake_ipython = mock.MagicMock()
-        fake_ipython.get_ipython.return_value = None
-        with mock.patch.dict("sys.modules", {"IPython": fake_ipython}):
-            self.assertFalse(device._in_ipython_notebook())
-
-    def test_no_ipython_installed_not_detected(self):
-        # Simulate IPython being missing entirely.
-        with mock.patch.dict("sys.modules", {"IPython": None}):
-            self.assertFalse(device._in_ipython_notebook())
-
-
-class TestInBrowser(unittest.TestCase):
-    """``_in_browser`` must recognise browser-hosted runtimes (Pyodide /
-    JupyterLite) so that ``record`` delegates to the Web Audio backend instead
-    of calling sounddevice, which would crash where there is no audio device."""
-
-    def test_emscripten_platform_detected(self):
-        with mock.patch.object(device.sys, "platform", "emscripten"):
-            self.assertTrue(device._in_browser())
-
-    def test_native_platform_not_detected(self):
-        for platform_name in ("darwin", "linux", "win32"):
-            with mock.patch.object(device.sys, "platform", platform_name):
-                self.assertFalse(device._in_browser())
 
 
 class TestRecordDispatch(unittest.TestCase):
@@ -541,7 +508,7 @@ class TestRecordDispatch(unittest.TestCase):
     def test_uses_browser_in_browser(self):
         sentinel = object()
         with (
-            mock.patch.object(device, "_in_browser", return_value=True),
+            mock.patch.object(device, "in_browser", return_value=True),
             mock.patch.object(
                 device, "_record_in_browser", return_value=sentinel
             ) as mock_browser,
@@ -554,7 +521,7 @@ class TestRecordDispatch(unittest.TestCase):
 
     def test_uses_sounddevice_outside_browser(self):
         with (
-            mock.patch.object(device, "_in_browser", return_value=False),
+            mock.patch.object(device, "in_browser", return_value=False),
             mock.patch.object(device, "_record_in_browser") as mock_browser,
             mock.patch.object(
                 device.sd,
