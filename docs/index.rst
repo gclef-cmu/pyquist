@@ -79,6 +79,7 @@ Most users only need a handful of symbols. Click through for details.
 
 * :class:`pyquist.Audio` — wrap a numpy array of samples as audio
 * :func:`pyquist.play` — playback (auto-detects notebook vs. sounddevice)
+* :class:`pyquist.Stream` — real-time audio, one block at a time
 * :func:`pyquist.plot`, :func:`pyquist.plot_freq`, :func:`pyquist.plot_spec` — visualization
 * :class:`pyquist.score.Score`, :class:`pyquist.score.Event`,
   :class:`pyquist.score.BasicMetronome` — onset-based scores and rendering
@@ -94,7 +95,9 @@ All modules
    api/score
    api/plot
    api/device
+   api/stream
    api/helper
+   api/env
    api/web
 
 

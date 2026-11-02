@@ -23,8 +23,8 @@ _DEFAULTS_PATH = CACHE_DIR / "device_defaults.json"
 
 DeviceRef = Union[int, str]
 
-# Peak ceiling applied by ``play(safe=True)``.
-_SAFE_PEAK_DBFS = -18.0
+# Peak ceiling applied by ``play(safe=True)`` and ``Stream(safe=True)``.
+SAFE_PEAK_DBFS = -20.0
 
 
 def set_input_device(
@@ -114,8 +114,9 @@ def play(
 
     Args:
         audio: The audio to play. Must have a ``sample_rate``.
-        safe: If True (default), limits the peak amplitude to -18 dBFS
-            before playback to protect ears against accidentally hot signals.
+        safe: If True (default), limits the peak amplitude to
+            :data:`SAFE_PEAK_DBFS` (-20 dBFS) before playback to protect ears
+            against accidentally hot signals.
         normalize: If True, normalizes the audio to 0 dBFS before playback.
         force_sounddevice: If True, always use sounddevice playback, even
             when called from a notebook. Useful when you want the audio
@@ -134,8 +135,8 @@ def play(
     if normalize:
         audio.normalize()
     audio.clip()
-    if safe and audio.peak_amplitude > db_to_amplitude(_SAFE_PEAK_DBFS):
-        audio.normalize(peak_dbfs=_SAFE_PEAK_DBFS)
+    if safe and audio.peak_amplitude > db_to_amplitude(SAFE_PEAK_DBFS):
+        audio.normalize(peak_dbfs=SAFE_PEAK_DBFS)
 
     if not force_sounddevice and in_ipython_notebook():
         # Imported lazily so headless / non-notebook usage doesn't need IPython.
