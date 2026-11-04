@@ -147,17 +147,17 @@ def _token_expired(token_data: dict) -> bool:
     return time.time() >= obtained_at + expires_in - _TOKEN_EXPIRY_MARGIN_S
 
 
-def _oauth_token(*, reauthenticate: bool = False, force_new: bool = False) -> str:
+def _oauth_token(*, reauthenticate: bool = False) -> str:
     """Returns a FreeSound OAuth2 access token — cached, refreshed, or new.
 
     Only needed for downloading the original (uncompressed) sound files;
     fetching previews uses the API key alone.
 
     A cached token is reused while valid. Once expired, the refresh token is
-    tried; if that fails (or ``force_new`` / ``reauthenticate`` is set), the
-    interactive authorization flow runs again.
+    tried; if that fails (or ``reauthenticate`` is set), the interactive
+    authorization flow runs again.
     """
-    if not (reauthenticate or force_new):
+    if not reauthenticate:
         cached = _load_json(_OAUTH_TOKEN_PATH)
         if cached and "access_token" in cached:
             if not _token_expired(cached):
@@ -250,16 +250,17 @@ def fetch_audio_bytes(
     if cache_path.exists():
         return cache_path.read_bytes(), metadata
 
+    headers = None
     if preview_tag is None:
         token = _oauth_token(reauthenticate=reauthenticate)
-        response = requests.get(url, headers={"Authorization": f"Bearer {token}"})
-        if response.status_code == 401:
-            # Token rejected (e.g. revoked) — run the interactive flow once more.
-            print("FreeSound rejected the cached authorization.")
-            token = _oauth_token(force_new=True)
-            response = requests.get(url, headers={"Authorization": f"Bearer {token}"})
-    else:
-        response = requests.get(url)
+        headers = {"Authorization": f"Bearer {token}"}
+
+    response = requests.get(url, headers=headers)
+    if response.status_code == 401 and preview_tag is None:
+        raise RuntimeError(
+            "FreeSound rejected the OAuth token. Pass reauthenticate=True "
+            f"or delete {_OAUTH_TOKEN_PATH} to authorize again."
+        )
     if response.status_code != 200:
         raise RuntimeError(
             f"FreeSound download failed for sound {sound_id}: "
