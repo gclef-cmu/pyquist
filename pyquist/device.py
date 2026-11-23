@@ -11,13 +11,22 @@ import time
 from typing import Any, Optional, Tuple, Union
 
 import numpy as np
-import sounddevice as sd
 import tqdm
 
 from .audio import Audio
 from .env import in_browser, in_ipython_notebook
 from .helper import db_to_amplitude
 from .paths import CACHE_DIR
+
+if in_browser():
+    # PortAudio can't exist in WebAssembly. browseraudio's drop-in module
+    # plays through the Web Audio API instead (Stream needs browseraudio>=0.4).
+    try:
+        import browseraudio.sounddevice as sd  # type: ignore[import-not-found]
+    except ImportError:
+        import sounddevice as sd
+else:
+    import sounddevice as sd
 
 _DEFAULTS_PATH = CACHE_DIR / "device_defaults.json"
 

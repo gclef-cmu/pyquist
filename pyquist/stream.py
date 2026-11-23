@@ -27,10 +27,9 @@ import traceback
 from typing import Callable, Optional
 
 import numpy as np
-import sounddevice as sd
 
 from .audio import Audio
-from .device import SAFE_PEAK_DBFS
+from .device import SAFE_PEAK_DBFS, sd  # browseraudio's stand-in in the browser
 from .helper import db_to_amplitude
 
 
